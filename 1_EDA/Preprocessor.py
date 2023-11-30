@@ -168,7 +168,7 @@ if __name__ == "__main__":
     #preprocessor.merge_duplicates()
     preprocessor.restore_duplicates_from_json()
 
-    if(os.getenv('DATA_DIR')=="TRUE"):
+    if(os.getenv('ONLY_MULTIMODAL')=="TRUE"):
         df_train = pd.read_csv(preprocessor.multimodal_train_tsv_dir, sep='\t')
         df_test = pd.read_csv(preprocessor.multimodal_test_tsv_dir, sep='\t')
         df_val = pd.read_csv(preprocessor.multimodal_val_tsv_dir, sep='\t')
