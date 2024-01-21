@@ -1,12 +1,12 @@
 
 import time
-from transformers import VisionEncoderDecoderModel, ViTFeatureExtractor, AutoTokenizer
+from transformers import VisionEncoderDecoderModel, ViTImageProcessor, AutoTokenizer
 import torch
 from PIL import Image
      
 
 model = VisionEncoderDecoderModel.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
-feature_extractor = ViTFeatureExtractor.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
+feature_extractor = ViTImageProcessor.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
 tokenizer = AutoTokenizer.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -41,7 +41,7 @@ def predict_step(image_paths):
   return preds
   
 
-resulting_captions = predict_step(['C:/Users/nello/Desktop/TESI_CODICE/dataset/public_image_set/1a1ivu.jpg'])
+resulting_captions = predict_step(['/home/enriconello/DeepFakeDetection/dataset_small/1a1e5v.jpg'])
 
 # Print out the resulting caption
 for i, caption in enumerate(resulting_captions):
