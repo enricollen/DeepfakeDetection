@@ -5,11 +5,17 @@ import numpy as np
 import matplotlib.pyplot as plt
 from diffusers import StableDiffusionPipeline
 from torch.cuda.amp import autocast  # FOR FP16
+from dotenv import load_dotenv
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
+load_dotenv()
+
+BATCH_SIZE = int(os.getenv("BATCH_SIZE"))
+NUM_INFERENCE_STEPS = int(os.getenv("NUM_INFERENCE_STEPS"))
+
 class Txt2ImgGenerator:
-    def __init__(self, model_name, prompts_file_path, output_folder, batch_size=50, num_inference_steps=30):
+    def __init__(self, model_name, prompts_file_path, output_folder, batch_size=BATCH_SIZE, num_inference_steps=NUM_INFERENCE_STEPS):
         self.model = StableDiffusionPipeline.from_pretrained(
             model_name,
             torch_dtype=torch.float16,
