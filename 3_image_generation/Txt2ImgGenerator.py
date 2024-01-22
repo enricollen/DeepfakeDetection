@@ -74,15 +74,13 @@ class Txt2ImgGenerator:
 
             batch_end_time = time.time()
             batch_time = batch_end_time - start_time
-            avg_time_per_image = batch_time / counter
-            print("Batch time: {:.2f} seconds".format(batch_time))
-            print("Average time per image inference: {:.4f} seconds".format(avg_time_per_image))
+            minutes, seconds = divmod(batch_time, 60)
+            print("Batch generation Time: {:.0f} m {:.2f} s".format(minutes, seconds))
 
         total_end_time = time.time()
         total_time = total_end_time - start_time
-        avg_time_per_image = total_time / total_images
-        print("\nTotal time for batch generation: {:.2f} seconds".format(total_time))
-        print("Average time per image inference (overall): {:.4f} seconds".format(avg_time_per_image))
+        minutes, seconds = divmod(total_time, 60)
+        print("Total Generation Time: {:.0f} m {:.2f} s".format(minutes, seconds))
 
         print("\nGeneration completed.")
 
@@ -100,7 +98,7 @@ class Txt2ImgGenerator:
 if __name__ == "__main__":
 
     SD = Txt2ImgGenerator(
-        model_name="stabilityai/stable-diffusion-2",
+        model_name="stabilityai/stable-diffusion-2", #"dreamlike-art/dreamlike-diffusion-1.0"
         prompts_file_path="prompts.txt",
         output_folder="/home/enriconello/DeepFakeDetection/Thesis/3_image_generation/generated_images"
     )
