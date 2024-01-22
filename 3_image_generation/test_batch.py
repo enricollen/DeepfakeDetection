@@ -4,6 +4,8 @@ import torch
 from torchvision import transforms
 import time
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+
 # Function to process a batch of prompts
 def process_batch(pipe, prompts):
     with torch.no_grad():

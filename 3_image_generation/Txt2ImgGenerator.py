@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 from diffusers import StableDiffusionPipeline
 from torch.cuda.amp import autocast  # FOR FP16
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+
 class Txt2ImgGenerator:
     def __init__(self, model_name, prompts_file_path, output_folder, batch_size=50, num_inference_steps=30):
         self.model = StableDiffusionPipeline.from_pretrained(
