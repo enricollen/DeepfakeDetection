@@ -99,7 +99,7 @@ if __name__ == "__main__":
 
     SD = Txt2ImgGenerator(
         model_name="stabilityai/stable-diffusion-2", #"dreamlike-art/dreamlike-diffusion-1.0"
-        prompts_file_path="prompts.txt",
+        prompts_file_path="Thesis/3_image_generation/prompts.txt",
         output_folder="/home/enriconello/DeepFakeDetection/Thesis/3_image_generation/generated_images"
     )
 
