@@ -4,6 +4,7 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 from diffusers import StableDiffusionPipeline
+import pandas as pd
 from torch.cuda.amp import autocast  # FOR FP16
 from dotenv import load_dotenv
 
@@ -15,7 +16,7 @@ BATCH_SIZE = int(os.getenv("BATCH_SIZE"))
 NUM_INFERENCE_STEPS = int(os.getenv("NUM_INFERENCE_STEPS"))
 
 class Txt2ImgGenerator:
-    def __init__(self, model_name, prompts_file_path, output_folder, batch_size=BATCH_SIZE, num_inference_steps=NUM_INFERENCE_STEPS):
+    def __init__(self, model_name, output_folder, csv_file_path=None, column_name=None, prompts_file_path=None, batch_size=BATCH_SIZE, num_inference_steps=NUM_INFERENCE_STEPS):
         self.model = StableDiffusionPipeline.from_pretrained(
             model_name,
             torch_dtype=torch.float16,
@@ -25,7 +26,11 @@ class Txt2ImgGenerator:
         self.model.enable_vae_slicing()
         self.model = self.model.to("cuda")
 
-        self.prompts = self.read_prompts_from_file(prompts_file_path)
+        if prompts_file_path!=None:
+            self.prompts = self.read_prompts_from_file(prompts_file_path)
+        else:
+            self.prompts = self.read_prompts_from_csv(csv_file_path, column_name)
+
         self.prompts = ["photo of " + prompt for prompt in self.prompts]
 
         self.batch_size = batch_size
@@ -41,14 +46,19 @@ class Txt2ImgGenerator:
         with open(file_path, "r") as file:
             prompts = [line.strip() for line in file.readlines()]
         return prompts
+    
+    def read_prompts_from_csv(self, csv_file_path, column_name):
+        df = pd.read_csv(csv_file_path)
+        prompts = df[column_name].tolist()
+        return prompts
 
     def divide_chunks(self, lst, chunk_size):
         for i in range(0, len(lst), chunk_size):
             yield lst[i:i + chunk_size]
 
     def generate_images(self):
-        total_images = len(self.prompts)
-        batches = list(self.divide_chunks(self.prompts, self.batch_size))
+        total_images = len(self.prompts[:10])
+        batches = list(self.divide_chunks(self.prompts[:10], self.batch_size))
         print("Total prompts:", total_images)
         counter = 0
 
@@ -97,10 +107,17 @@ class Txt2ImgGenerator:
 
 if __name__ == "__main__":
 
-    SD = Txt2ImgGenerator(
+    """SD = Txt2ImgGenerator(
         model_name="stabilityai/stable-diffusion-2", #"dreamlike-art/dreamlike-diffusion-1.0"
-        prompts_file_path="Thesis/3_image_generation/prompts.txt",
-        output_folder="/home/enriconello/DeepFakeDetection/Thesis/3_image_generation/generated_images"
+        output_folder="/home/enriconello/DeepFakeDetection/Thesis/3_image_generation/test/generated_images",
+        prompts_file_path="/home/enriconello/DeepFakeDetection/Thesis/3_image_generation/test/prompts.txt"
+    )"""
+
+    SD = Txt2ImgGenerator(
+        model_name="stabilityai/stable-diffusion-2",
+        output_folder="/home/enriconello/DeepFakeDetection/Thesis/3_image_generation/test/generated_images",
+        csv_file_path="../2_image_captioning/csv/validation_pristine_captioned.csv",
+        column_name="generated_caption"
     )
 
     SD.generate_images()
