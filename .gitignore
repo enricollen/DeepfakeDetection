@@ -1,3 +1,5 @@
 yolov3.weights
 *.png
 .env
+*.pt
+*.pt.*
