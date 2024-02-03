@@ -1,9 +1,10 @@
 from PIL import Image
-from IPython.display import display
 import torch as th
 import os
 import pandas as pd
 import time
+from dotenv import load_dotenv
+
 from glide_text2im.download import load_checkpoint
 from glide_text2im.model_creation import (
     create_model_and_diffusion,
@@ -11,30 +12,46 @@ from glide_text2im.model_creation import (
     model_and_diffusion_defaults_upsampler
 )
 
+load_dotenv()
 
-def save_images(batch: th.Tensor, output_path, prompt):
-    os.makedirs(os.path.join(output_path, prompt), exist_ok=True)  # Ensure the prompt-specific directory exists
+NUM_IMAGES = int(os.getenv("NUM_IMAGES"))
+START_INDEX = int(os.getenv("START_INDEX"))
+END_INDEX = int(os.getenv("END_INDEX"))
+NUM_INFERENCE_STEPS = os.getenv("NUM_INFERENCE_STEPS")
+GUIDANCE_SCALE = float(os.getenv("GUIDANCE_SCALE"))
+INPUT_CSV_PATH = os.getenv("INPUT_CSV_PATH")
+OUTPUT_FOLDER = os.getenv("OUTPUT_FOLDER")
+PROMPT_COLUMN_NAME = os.getenv("PROMPT_COLUMN_NAME")
+IDS_COLUMN_NAME = os.getenv("IDS_COLUMN_NAME")
+NEGATIVE_PROMPTS = os.getenv("NEGATIVE_PROMPTS")
+
+
+def save_images(batch: th.Tensor, output_path, image_ids):
     scaled = ((batch + 1) * 127.5).round().clamp(0, 255).to(th.uint8).cpu()
     reshaped = scaled.permute(0, 2, 3, 1)
-    for index, image in enumerate(reshaped):
+
+    os.makedirs(output_path, exist_ok=True)
+
+    for index, (image, image_id) in enumerate(zip(reshaped, image_ids)):
         img = Image.fromarray(image.numpy())
-        img.save(os.path.join(output_path, prompt, str(index) + ".png"))
+        filename = f"GL_fake_{image_id}.jpg"
+        img.save(os.path.join(output_path, filename))
 
 
-def read_prompts_from_csv(csv_file_path, column_name):
+def read_prompts_from_csv(csv_file_path):
     df = pd.read_csv(csv_file_path)
-    prompts = df[column_name].tolist()
-    return prompts
+    prompts = df[PROMPT_COLUMN_NAME].tolist()
+    image_ids = df[IDS_COLUMN_NAME].tolist()
+    return prompts, image_ids
 
 
-# Create a classifier-free guidance sampling function
 def model_fn(x_t, ts, **kwargs):
     half = x_t[: len(x_t) // 2]
     combined = th.cat([half, half], dim=0)
     model_out = model(combined, ts, **kwargs)
     eps, rest = model_out[:, :3], model_out[:, 3:]
     cond_eps, uncond_eps = th.split(eps, len(eps) // 2, dim=0)
-    half_eps = uncond_eps + guidance_scale * (cond_eps - uncond_eps)
+    half_eps = uncond_eps + GUIDANCE_SCALE * (cond_eps - uncond_eps)
     eps = th.cat([half_eps, half_eps], dim=0)
     return th.cat([eps, rest], dim=1)
 
@@ -42,13 +59,10 @@ def model_fn(x_t, ts, **kwargs):
 has_cuda = th.cuda.is_available()
 device = th.device('cpu' if not has_cuda else 'cuda')
 
-
-guidance_scale = 3.0
-
-# Create base model.
+# base model.
 options = model_and_diffusion_defaults()
 options['use_fp16'] = has_cuda
-options['timestep_respacing'] = '100' # use 100 diffusion steps for fast sampling
+options['timestep_respacing'] = NUM_INFERENCE_STEPS
 model, diffusion = create_model_and_diffusion(**options)
 model.eval()
 if has_cuda:
@@ -56,11 +70,10 @@ if has_cuda:
 model.to(device)
 model.load_state_dict(load_checkpoint('base', device))
 
-
-# Create upsampler model.
+# upsampler model.
 options_up = model_and_diffusion_defaults_upsampler()
 options_up['use_fp16'] = has_cuda
-options_up['timestep_respacing'] = 'fast27' # use 27 diffusion steps for very fast sampling
+options_up['timestep_respacing'] = 'fast27' 
 model_up, diffusion_up = create_model_and_diffusion(**options_up)
 model_up.eval()
 if has_cuda:
@@ -68,15 +81,15 @@ if has_cuda:
 model_up.to(device)
 model_up.load_state_dict(load_checkpoint('upsample', device))
 
-def txt2img(skip_grid=True, skip_save=False, n_samples=1, outdir=""):
-    # Read prompts from the prompts.txt file
-    """with open("/content/prompts.txt", "r") as file:
-        prompts = [line.strip() for line in file]"""
-    prompts=read_prompts_from_csv("/home/enriconello/DeepFakeDetection/Thesis/2_image_captioning/csv/validation_pristine_captioned.csv", "generated_caption")
-    prompts=prompts[:1000]
-    
+
+def txt2img(START_INDEX, END_INDEX):
+    prompts, image_ids = read_prompts_from_csv(INPUT_CSV_PATH)
+    prompts = prompts[START_INDEX:END_INDEX]
+    prompts = [prompt + ", photo, real" for prompt in prompts]
+    image_ids = image_ids[START_INDEX:END_INDEX]
+
     # Sampling parameters
-    batch_size = n_samples
+    batch_size = END_INDEX - START_INDEX
 
     # Tune this parameter to control the sharpness of 256x256 images.
     # A value of 1.0 is sharper, but sometimes results in grainy artifacts.
@@ -89,6 +102,8 @@ def txt2img(skip_grid=True, skip_save=False, n_samples=1, outdir=""):
     rows = len(prompts)
 
     start_time = time.time()
+
+    generated_images = []
 
     for index, prompt in enumerate(prompts):
         # Create the text tokens to feed to the model.
@@ -127,9 +142,6 @@ def txt2img(skip_grid=True, skip_save=False, n_samples=1, outdir=""):
             cond_fn=None,
         )[:batch_size]
         model.del_cache()
-
-        # Show the output
-
 
         ##############################
         # Upsample the 64x64 samples #
@@ -172,7 +184,9 @@ def txt2img(skip_grid=True, skip_save=False, n_samples=1, outdir=""):
         model_up.del_cache()
 
         # Save the output
-        #save_images(up_samples, "generated_images", prompt)
+        save_images(up_samples, OUTPUT_FOLDER, image_ids)
+
+        generated_images.extend([(f"GL_fake_{image_id}", image_id) for image_id in image_ids])
 
         if index % 100:
             print("Generated", str(index), "/", str(rows))
@@ -190,5 +204,20 @@ def txt2img(skip_grid=True, skip_save=False, n_samples=1, outdir=""):
 
     print("\nGeneration completed.")
 
+    # Combine generated image information with the original DataFrame
+    generated_df = pd.DataFrame(generated_images, columns=['fake_id', 'original_id'])
+    original_df = pd.read_csv(INPUT_CSV_PATH)
+    original_df = original_df[START_INDEX:END_INDEX]
 
-txt2img()
+    # Merge the original DataFrame with the generated DataFrame
+    merged_df = pd.merge(original_df, generated_df, left_on=IDS_COLUMN_NAME, right_on='original_id', how='left')
+
+    # Drop the 'original_id' column
+    merged_df = merged_df.drop(columns=['original_id'])
+    
+    merged_df['class'] = "fake"
+
+    # Save the merged DataFrame to a new CSV file
+    merged_df.to_csv('generated_images.csv', index=False)
+
+txt2img(START_INDEX, END_INDEX)
