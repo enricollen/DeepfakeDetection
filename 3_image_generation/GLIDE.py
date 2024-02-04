@@ -12,6 +12,7 @@ from glide_text2im.model_creation import (
     model_and_diffusion_defaults_upsampler
 )
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "5"
 
 class GLIDE:
     def __init__(self) -> None:
@@ -91,7 +92,7 @@ class GLIDE:
     def txt2img(self):
         prompts, image_ids = self.read_prompts_from_csv(self.INPUT_CSV_PATH)
         prompts = prompts[self.START_INDEX:self.END_INDEX]
-        prompts = [prompt + ", photo, real" for prompt in prompts]
+        prompts = [prompt + ", photo" for prompt in prompts]
         image_ids = image_ids[self.START_INDEX:self.END_INDEX]
 
         # Sampling parameters
@@ -99,7 +100,7 @@ class GLIDE:
 
         # Tune this parameter to control the sharpness of 256x256 images.
         # A value of 1.0 is sharper, but sometimes results in grainy artifacts.
-        upsample_temp = 0.997
+        upsample_temp = 0.998
 
         ##############################
         # Sample from the base model #
@@ -110,8 +111,10 @@ class GLIDE:
         start_time = time.time()
 
         generated_images = []
+        generated_image_info = []
 
         for index, prompt in enumerate(prompts):
+            print(f"Generating for prompt: {prompt}")
             # Create the text tokens to feed to the model.
             tokens = self.model_base.tokenizer.encode(prompt)
             tokens, mask = self.model_base.tokenizer.padded_tokens_and_mask(
@@ -192,7 +195,9 @@ class GLIDE:
             # Save the output
             self.save_images(up_samples, self.OUTPUT_FOLDER, image_ids)
 
-            generated_images.extend([(f"GL_fake_{image_id}", image_id) for image_id in image_ids])
+            generated_image_info.extend([(original_id, f"GL_fake_{original_id}") for original_id in image_ids])
+
+            print(f"Generated image name: GL_fake_{image_ids[index]}")
 
             if index % 100:
                 print("Generated", str(index), "/", str(rows))
@@ -209,16 +214,14 @@ class GLIDE:
         print(f"Total Generation Time: {int(total_hours)}h {int(total_minutes)}m {total_seconds:.2f}s")
 
         # Combine generated image information with the original DataFrame
-        generated_df = pd.DataFrame(generated_images, columns=['fake_id', 'original_id'])
+        generated_df = pd.DataFrame(generated_image_info, columns=['original_id', 'fake_id'])
         original_df = pd.read_csv(self.INPUT_CSV_PATH)
         original_df = original_df[self.START_INDEX:self.END_INDEX]
 
         # Merge the original DataFrame with the generated DataFrame
-        merged_df = pd.merge(original_df, generated_df, left_on=self.IDS_COLUMN_NAME, right_on='original_id', how='left')
+        merged_df = pd.merge(original_df, generated_df, left_on='id', right_on="original_id", how='left')
 
-        # Drop the 'original_id' column
-        merged_df = merged_df.drop(columns=['original_id'])
-        
+        # Add the 'class' column
         merged_df['class'] = "fake"
 
         # Save the merged DataFrame to a new CSV file
@@ -231,4 +234,19 @@ class GLIDE:
 
 if __name__ == "__main__":
     model = GLIDE()
-    model.txt2img()
+
+    # Set the batch size for each iteration
+    batch_size = int(os.getenv("BATCH_SIZE"))
+
+    start_index = model.START_INDEX
+    end_index = model.END_INDEX
+
+    while start_index < end_index:
+        model.START_INDEX = start_index
+        model.END_INDEX = min(start_index + batch_size, end_index)
+
+        # Call the txt2img method for the current batch
+        model.txt2img()
+
+        # Update start_index for the next iteration
+        start_index += batch_size
