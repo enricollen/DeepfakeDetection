@@ -12,7 +12,7 @@ from glide_text2im.model_creation import (
     model_and_diffusion_defaults_upsampler
 )
 
-#os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+os.environ["CUDA_VISIBLE_DEVICES"] = "5"
 
 class GLIDE:
     def __init__(self) -> None:
@@ -112,7 +112,7 @@ class GLIDE:
 
         for index, prompt in enumerate(prompts):
             
-            print(f"Generating for prompt: {prompt}")
+            #print(f"Generating for prompt: {prompt}")
             # Create the text tokens to feed to the model.
             tokens = self.model_base.tokenizer.encode(prompt)
             tokens, mask = self.model_base.tokenizer.padded_tokens_and_mask(
@@ -193,23 +193,23 @@ class GLIDE:
             # Save the output
             self.save_images(up_samples, self.OUTPUT_FOLDER, image_ids)
 
-            print(f"Generated image name: GL_fake_{image_ids[index]}")
+            #print(f"Generated image name: GL_fake_{image_ids[index]}")
 
-            if index % 100 == 0:
-                print("Generated", str(index), "/", str(rows))
+            #if index % 100 == 0:
+                #print("Generated", str(index), "/", str(rows))
         
         end_time = time.time()
 
         # Calculate the total time
-        total_time_seconds = end_time - start_time
+        #total_time_seconds = end_time - start_time
 
         # Convert total time to hours, minutes, and seconds
-        total_hours, remainder = divmod(total_time_seconds, 3600)
-        total_minutes, total_seconds = divmod(remainder, 60)
+        #total_hours, remainder = divmod(total_time_seconds, 3600)
+        #total_minutes, total_seconds = divmod(remainder, 60)
 
-        print(f"Total Generation Time: {int(total_hours)}h {int(total_minutes)}m {total_seconds:.2f}s")
+        #print(f"Total Generation Time: {int(total_hours)}h {int(total_minutes)}m {total_seconds:.2f}s")
 
-        print("\nGeneration completed.")
+        #print("\nGeneration completed.")
 
 
 if __name__ == "__main__":
