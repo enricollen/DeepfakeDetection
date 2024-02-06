@@ -110,7 +110,7 @@ class GLIDE:
 
         start_time = time.time()
 
-        for index, prompt in enumerate(prompts):
+        for prompt, image_id in zip(prompts, image_ids):
             
             print(f"Generating for prompt: {prompt}")
             # Create the text tokens to feed to the model.
@@ -191,13 +191,10 @@ class GLIDE:
             self.model_up.del_cache()
 
             # Save the output
-            self.save_images(up_samples, self.OUTPUT_FOLDER, image_ids)
+            self.save_images(up_samples, self.OUTPUT_FOLDER, [image_id])
 
-            print(f"Generated image name: GL_fake_{image_ids[index]}")
+            print(f"Generated image name: GL_fake_{image_id}")
 
-            if index % 100 == 0:
-                print("Generated", str(index), "/", str(rows))
-        
         end_time = time.time()
 
         # Calculate the total time
@@ -210,6 +207,7 @@ class GLIDE:
         print(f"Total Generation Time: {int(total_hours)}h {int(total_minutes)}m {total_seconds:.2f}s")
 
         print("\nGeneration completed.")
+
 
 
 if __name__ == "__main__":
