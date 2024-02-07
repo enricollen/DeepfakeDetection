@@ -3,3 +3,4 @@ yolov3.weights
 .env
 *.pt
 *.pt.*
+3_image_generation/generated_images/train/*.jpg
