@@ -28,7 +28,9 @@ class Txt2ImgGenerator:
             model_name,
             torch_dtype=torch.float16,
             local_files_only=False,
-            use_safetensors=True
+            use_safetensors=True,
+            safety_checker = None,
+            requires_safety_checker = False
         )
         self.model.enable_vae_slicing()
         self.model = self.model.to("cuda")
