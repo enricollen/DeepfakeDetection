@@ -3,4 +3,8 @@ yolov3.weights
 .env
 *.pt
 *.pt.*
+<<<<<<< HEAD
 3_image_generation/generated_images/train/*.jpg
+=======
+*.jpg
+>>>>>>> 0287898119351eada00e8169afb156d9695f2163
