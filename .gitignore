@@ -3,3 +3,7 @@ yolov3.weights
 .env
 *.pt
 *.pt.*
+4_deepfake_detection/train_small/*.jpg
+4_deepfake_detection/val_small/*.jpg
+4_deepfake_detection/LOGGER/*
+*.pyc
