@@ -1,43 +1,42 @@
-import torch
-import random
-import yaml
-import argparse
-import pandas as pd
+import collections
 import os
-from os import cpu_count
 import cv2
 import numpy as np
-import math
-from multiprocessing import Manager
-from multiprocessing.pool import Pool
-from progress.bar import Bar
-from tqdm import tqdm
-from functools import partial
-from sklearn.utils import shuffle
-from pytorch_lightning import seed_everything
+import torch
+import torch.nn as nn
+import torch.optim as optim
 import clip
-from sklearn.model_selection import train_test_split
-import timm
-from timm.scheduler.cosine_lr import CosineLRScheduler
-from albumentations import Compose, PadIfNeeded, CenterCrop
-from transformers import AutoModel, AutoTokenizer
-from sklearn.model_selection import train_test_split
-import collections
-from progress.bar import ChargingBar
-from torch.utils.tensorboard import SummaryWriter
-from utils import check_correct, resize, get_n_params, center_crop
+from torch.utils.data import DataLoader
+from albumentations import Compose, PadIfNeeded
+from tqdm import tqdm
+from images_dataset import ImagesDataset
+from utils import center_crop
 from images_dataset import ImagesDataset
 from transforms.albu import IsotropicResize
 
 IMAGE_SIZE = 224
-NUM_WORKERS = 3
-NUM_EPOCHS = 4
-LEARNING_RATE = 0.1
+NUM_EPOCHS = 100
+LEARNING_RATE = 0.0001
 WEIGHT_DECAY = 0.0000001
+BATCH_SIZE = 32
+PATIENCE = 10
 TRAIN_DATA_PATH = 'train_small/'
 VAL_DATA_PATH = 'val_small/'
-MODEL_PATH = 'models_saved'
-MODEL_NAME = 'CLIP'
+SAVE_MODEL=False
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+class MLP(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        super(MLP, self).__init__()
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, output_dim)
+    
+    def forward(self, x):
+        x = torch.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x    
+
 
 def read_images(data_path, transform):
     dataset = []
@@ -49,6 +48,7 @@ def read_images(data_path, transform):
 
         image_path = os.path.join(data_path, image_name)
         image = cv2.imread(image_path)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         if image is None:
             continue
 
@@ -65,222 +65,149 @@ def create_pre_transform(size):
         PadIfNeeded(min_height=size, min_width=size, border_mode=cv2.BORDER_CONSTANT)
     ])
 
-# Main body
-if __name__ == "__main__":
-    seed_everything(42)
-    random.seed(42)
 
-    # Model Loading
-    clip_model, preprocess = clip.load("ViT-B/32", device=torch.device('cuda'))
-    dim = 0.5
-    clip_model = clip_model.float()
-    clip_model.to("cuda")
-    clip_model.eval()
-    model = torch.nn.Linear(int(1024*dim), 1)
+transform = create_pre_transform(IMAGE_SIZE)
+train_dataset = read_images(TRAIN_DATA_PATH, transform)
+validation_dataset = read_images(VAL_DATA_PATH, transform)
 
-    model_parameters = filter(lambda p: p.requires_grad, model.parameters())
-    params = sum([np.prod(p.size()) for p in model_parameters])
-    print("Model parameters:", params)
+train_labels = [float(row[1]) for row in train_dataset]
+train_dataset = [row[0] for row in train_dataset]
+validation_labels = [float(row[1]) for row in validation_dataset]
+validation_dataset = [row[0] for row in validation_dataset]
 
-    # Read dataset
-    transform = create_pre_transform(IMAGE_SIZE)
-    train_data_path = TRAIN_DATA_PATH
-    train_dataset = read_images(train_data_path, transform)
+# train and validation datasets and DataLoaders
+train_dataset = ImagesDataset(np.array(train_dataset), np.array(train_labels), IMAGE_SIZE, mode='train')
+val_dataset = ImagesDataset(np.array(validation_dataset), np.array(validation_labels), IMAGE_SIZE, mode='val')
+train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
 
-    validation_data_path = VAL_DATA_PATH
-    validation_dataset = read_images(validation_data_path, transform)
+# CLIP
+clip_model, preprocess = clip.load("ViT-B/32", device=device)
 
-    # Extract labels and images from datasets
-    train_labels = [float(row[1]) for row in train_dataset]
-    train_dataset = [row[0] for row in train_dataset]
-    validation_labels = [float(row[1]) for row in validation_dataset]
-    validation_dataset = [row[0] for row in validation_dataset]
+# MLP
+input_dim = clip_model.visual.output_dim  # Dimension of image features from CLIP
+hidden_dim = 512
+output_dim = 1  # Binary classification
+classifier = MLP(input_dim, hidden_dim, output_dim).to(device)
 
+# Print some useful statistics
+print("Train images:", len(train_dataset), "Validation images:", len(validation_dataset))
+print("__TRAINING STATS__")
+train_counters = collections.Counter(train_labels)
+print(train_counters)
 
-    # Calculate number of samples
-    train_samples = len(train_dataset)
-    validation_samples = len(validation_dataset)
+class_weights = train_counters[0] / train_counters[1]
+print("Weights", class_weights)
 
-    # Print some useful statistics
-    print("Train images:", len(train_dataset), "Validation images:", len(validation_dataset))
-    print("__TRAINING STATS__")
-    train_counters = collections.Counter(train_labels)
-    print(train_counters)
+print("__VALIDATION STATS__")
+val_counters = collections.Counter(validation_labels)
+print(val_counters)
+print("___________________")
 
-    class_weights = train_counters[0] / train_counters[1]
-    print("Weights", class_weights)
+# loss, and optimizer
+loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([class_weights])).to(device)
+optimizer = optim.Adam(classifier.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
-    print("__VALIDATION STATS__")
-    val_counters = collections.Counter(validation_labels)
-    print(val_counters)
-    print("___________________")
+# Training loop
+best_val_loss = float('inf')
+prev_val_loss = float('inf')
+patience_counter = 0
+for epoch in range(NUM_EPOCHS):
 
-    loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([class_weights]))
-    batch_size = 4
+    # Training
+    classifier.train()
+    train_loss = 0.0
+    correct_train = 0
+    total_train = 0
+    classified_as_label_0_train = 0
+    classified_as_label_1_train = 0
+    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch+1}/{NUM_EPOCHS}")
 
-    train_dataset = ImagesDataset(np.asarray(train_dataset), np.asarray(train_labels), IMAGE_SIZE) #train_captions
-    dl = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, sampler=None,
-                                batch_sampler=None, num_workers=NUM_WORKERS, collate_fn=None,
-                                pin_memory=False, drop_last=False, timeout=0,
-                                worker_init_fn=None, prefetch_factor=2,
-                                persistent_workers=False)
-    del train_dataset
+    for index, (images, labels) in progress_bar: #captions
+        images = np.transpose(images, (0, 3, 1, 2))
+        images = images.to(device)
+        with torch.no_grad():
+            image_features = clip_model.encode_image(images).float()
+            image_features /= image_features.norm(dim=-1, keepdim=True)
+            labels = labels.float().unsqueeze(1).to(device)
+        
+        optimizer.zero_grad()
+        outputs = classifier(image_features)
+        loss = loss_fn(outputs, labels)
+        loss.backward()
+        optimizer.step()
 
-    validation_dataset = ImagesDataset(np.asarray(validation_dataset), np.asarray(validation_labels), IMAGE_SIZE, mode='validation') #validation_captions
-    val_dataset = torch.utils.data.DataLoader(validation_dataset, batch_size=batch_size, shuffle=True, sampler=None,
-                                    batch_sampler=None, num_workers=NUM_WORKERS, collate_fn=None,
-                                    pin_memory=False, drop_last=False, timeout=0,
-                                    worker_init_fn=None, prefetch_factor=2,
-                                    persistent_workers=False)
-    del validation_dataset
+        # training accuracy
+        predicted_train = torch.round(torch.sigmoid(outputs))
+        correct_train += (predicted_train == labels).sum().item()
+        total_train += labels.size(0)
 
+        train_loss += loss.item()
+        progress_bar.set_postfix(train_loss=train_loss / (index + 1), train_accuracy=correct_train / total_train)
 
-    # TRAINING
-    tb_logger = SummaryWriter(log_dir="LOGGER", comment='')
-    experiment_path = tb_logger.get_logdir()
+        # samples classified as label 0 and label 1
+        classified_as_label_0_train += torch.sum(predicted_train == 0).item()
+        classified_as_label_1_train += torch.sum(predicted_train == 1).item()
 
-    model.train()
+    train_loss /= len(train_loader)
+    train_accuracy = correct_train / total_train
     
-    optimizer = torch.optim.SGD(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-    num_steps = int(NUM_EPOCHS * len(dl))
-    lr_scheduler = CosineLRScheduler(
-                    optimizer,
-                    t_initial=num_steps,
-                    lr_min=LEARNING_RATE * 1e-3,
-                    cycle_limit=9,
-                    t_in_epochs=False,
-        )
-    starting_epoch = 0
-    model = model.to("cuda")
-    counter = 0
-    not_improved_loss = 0
-    previous_loss = math.inf
+    print("label 0 (Train):", classified_as_label_0_train)
+    print("label 1 (Train):", classified_as_label_1_train)
     
-    for t in range(starting_epoch, NUM_EPOCHS + 1):
-        save_model = False
-        if not_improved_loss == 3: #patience
-            break
-        counter = 0
+    # Validation
+    classifier.eval()
+    val_loss = 0.0
+    correct_val = 0
+    total_val = 0
+    classified_as_label_0_val = 0
+    classified_as_label_1_val = 0
+    progress_bar = tqdm(enumerate(val_loader), total=len(val_loader), desc=f"Epoch {epoch+1}/{NUM_EPOCHS} (Validation)")
 
-        total_loss = 0
-        total_val_loss = 0
-
-        bar = ChargingBar('EPOCH #' + str(t), max=(len(dl)*batch_size)+len(val_dataset))
-        train_correct = 0
-        positive = 0
-        negative = 0
-
-        train_batches = len(dl)
-        val_batches = len(val_dataset)
-        total_batches = train_batches + val_batches
-
-        for index, (images, labels) in enumerate(dl): #captions
-            images = np.transpose(images, (0, 3, 1, 2))
-            labels = labels.unsqueeze(1)
-            images = images.to("cuda")
-            #captions = captions.to(opt.gpu_id)
-
-            with torch.no_grad():
-                image_features = clip_model.encode_image(images)
-                image_features /= image_features.norm(dim=-1, keepdim=True)
-                """if opt.mode == 1:
-                    text_features = clip_model.encode_text(captions)
-                    text_features /= text_features.norm(dim=-1, keepdim=True)
-                    features = torch.cat((image_features, text_features), dim = 1)
-                else:"""
-                features = image_features
-
-                features = features.float()
-
-                #features = torch.nn.functional.normalize(features)
-                y_pred = model(features)
-            y_pred = y_pred.cpu()
-            y_pred.requires_grad_(True)
-            labels.requires_grad_(True)
-
-            loss = loss_fn(y_pred, labels)
-
-            corrects, positive_class, negative_class = check_correct(y_pred, labels)
-            train_correct += corrects
-            positive += positive_class
-            negative += negative_class
-            optimizer.zero_grad()
-
-            loss.backward()
-
-            optimizer.step()
-            lr_scheduler.step_update((t * (train_batches) + index))
-            counter += 1
-            total_loss += round(loss.item(), 2)
-            for i in range(batch_size):
-                bar.next()
-
-            if index%100 == 0:
-                print("\nLoss: ", total_loss/counter, "Accuracy: ", train_correct/(counter*batch_size), "Train 0s: ", negative, "Train 1s:", positive)
-
+    for index, (images, labels) in progress_bar:
+        images = np.transpose(images, (0, 3, 1, 2))
+        images = images.to(device)
+        with torch.no_grad():
+            image_features = clip_model.encode_image(images).float()
+            labels = labels.float().unsqueeze(1).to(device)
+            
+            outputs = classifier(image_features)
+            loss = loss_fn(outputs, labels)
+            val_loss += loss.item()
+            
+            # Compute validation accuracy
+            predicted_val = torch.round(torch.sigmoid(outputs))
+            correct_val += (predicted_val == labels).sum().item()
+            total_val += labels.size(0)
+            
+            # Count samples classified as label 0 and label 1
+            classified_as_label_0_val += torch.sum(predicted_val == 0).item()
+            classified_as_label_1_val += torch.sum(predicted_val == 1).item()
         
-        
-        
-        val_counter = 0
-        val_correct = 0
-        val_positive = 0
-        val_negative = 0
+        progress_bar.set_postfix(val_loss=val_loss / (index + 1), val_accuracy=correct_val / total_val)
 
-        train_correct /= train_samples
-        total_loss /= counter
-        for index, (val_images, val_labels) in enumerate(val_dataset): #val_captions
+    val_loss /= len(val_loader)
+    val_accuracy = correct_val / total_val
 
-            val_images = np.transpose(val_images, (0, 3, 1, 2))
-            val_images = val_images.to("cuda")
-            #val_captions = val_captions.to("cuda")
+    print(f"Epoch [{epoch+1}/{NUM_EPOCHS}], Train Loss: {train_loss:.4f}, Train Accuracy: {train_accuracy:.4f}, Val Loss: {val_loss:.4f}, Val Accuracy: {val_accuracy:.4f}")
 
-            val_labels = val_labels.unsqueeze(1)
-            with torch.no_grad():
-                image_features = clip_model.encode_image(val_images)
-                """if opt.mode == 1:
-                    text_features = clip_model.encode_text(val_captions)
-                    features = torch.cat((image_features, text_features), dim=1)
-                    features = torch.cat((image_features, text_features), dim = 1)
-                else:"""
-                features = image_features
-                features = features.float()
-                features = torch.nn.functional.normalize(features)
-                val_pred = model(features)
-                val_pred = val_pred.cpu()
-                val_loss = loss_fn(val_pred, val_labels)
-                total_val_loss += round(val_loss.item(), 2)
-                corrects, positive_class, negative_class = check_correct(val_pred, val_labels)
-                val_correct += corrects
-                val_positive += positive_class
-                val_negative += negative_class
-                val_counter += 1
-                bar.next()
+    print("label 0 (Val):", classified_as_label_0_val)
+    print("label 1 (Val):", classified_as_label_1_val)
+    
+    # Check if validation loss increased with respect to the previous validation loss
+    if val_loss > prev_val_loss:
+        patience_counter += 1
+        print("Validation loss increased [" + str(patience_counter) + "/" + str(PATIENCE) + "]")
+    else:
+        patience_counter = 0  # Reset patience counter if validation loss improved
+    
+    prev_val_loss = val_loss 
 
-        #scheduler.step()
-        bar.finish()
+    # Early stopping
+    if patience_counter >= PATIENCE:
+        print("Early stopping.")
+        break
 
-
-        total_val_loss /= val_counter
-        val_correct /= validation_samples
-        if previous_loss <= total_val_loss:
-            print("Validation loss did not improved")
-            not_improved_loss += 1
-        else:
-            save_model = True
-            not_improved_loss = 0
-
-        tb_logger.add_scalar("Training/Accuracy", train_correct, t)
-        tb_logger.add_scalar("Training/Loss", total_loss, t)
-        tb_logger.add_scalar("Training/Learning_Rate", optimizer.param_groups[0]['lr'], t)
-        tb_logger.add_scalar("Validation/Loss", total_loss, t)
-        tb_logger.add_scalar("Validation/Accuracy", val_correct, t)
-
-        previous_loss = total_val_loss
-        print("#" + str(t) + "/" + str(NUM_EPOCHS) + " loss:" +
-            str(total_loss) + " accuracy:" + str(train_correct) +" val_loss:" + str(total_val_loss) + " val_accuracy:" + str(val_correct) + " val_0s:" + str(val_negative) + "/" + str(val_counters[0]) + " val_1s:" + str(val_positive) + "/" + str(val_counters[1]))
-
-        # Export model state
-        if not os.path.exists(MODEL_PATH):
-            os.makedirs(MODEL_PATH)
-        if save_model and t > NUM_EPOCHS-20:
-            torch.save(model.state_dict(), os.path.join(MODEL_PATH, MODEL_NAME + "_" + str(t)))
+# Save the model if needed
+if SAVE_MODEL:
+    torch.save(classifier.state_dict(), 'classifier.pth')

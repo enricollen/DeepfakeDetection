@@ -2,14 +2,8 @@ import cv2
 from albumentations import Compose, PadIfNeeded
 from transforms.albu import IsotropicResize
 import numpy as np
-import os
 import cv2
 import torch
-from statistics import mean
-
-approaches = {1: "FaceShifter", 2: "FS-GAN", 3: "DeepFakes", 4: "BlendFace", 5: "MMReplacement", 6: "DeepFakes-StarGAN-Stack", 7: "Talking Head Video", 8: "ATVG-Net", 9: "StarGAN-BlendFace-Stack", 10: "First Order Motion", 11: "StyleGAN2", 12: "MaskGAN", 13: "StarGAN2", 14: "SC-FEGAN", 15: "DiscoFaceGAN"}
-groups = {"Transfer": [1, 2, 3], "Swap": [4, 5], "FSM": [6, 9], "Face_Reenactment": [7, 8, 10], "Face Editing": [11, 12, 13, 14, 15]}
-
 
 def transform_frame(image, image_size):
     transform_pipeline = Compose([
