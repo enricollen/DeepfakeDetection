@@ -1,19 +1,13 @@
 import collections
 import os
-import cv2
 import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import clip
 from torch.utils.data import DataLoader
-from albumentations import Compose, PadIfNeeded
 from tqdm import tqdm
-from images_dataset import ImagesDataset
 from LazyImagesDataset import LazyImagesDataset
-from utils import center_crop
-from transforms.albu import IsotropicResize
 
 IMAGE_SIZE = 224
 NUM_EPOCHS = 30
@@ -21,8 +15,6 @@ LEARNING_RATE = 0.001
 WEIGHT_DECAY = 0.0000001
 BATCH_SIZE = 50
 PATIENCE = 10
-#TRAIN_DATA_PATH = 'train_small/'
-#VAL_DATA_PATH = 'val_small/'
 DATA_PATH = 'C:/Users/nello/Desktop/TESI/dataset_after_merging_WITH_DUPLICATES'
 TRAIN_CSV_PATH = 'csv/train.csv'
 VAL_CSV_PATH = 'csv/validation.csv'
@@ -32,15 +24,19 @@ SAVE_MODEL=True
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class MLP(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim):
+    def __init__(self, input_dim, hidden_dims, output_dim):
         super(MLP, self).__init__()
-        self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, output_dim)
+        layers = []
+        prev_dim = input_dim
+        for dim in hidden_dims:
+            layers.append(nn.Linear(prev_dim, dim))
+            layers.append(nn.ReLU())
+            prev_dim = dim
+        layers.append(nn.Linear(prev_dim, output_dim))
+        self.mlp = nn.Sequential(*layers)
     
     def forward(self, x):
-        x = torch.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x    
+        return self.mlp(x)
 
 if __name__ == '__main__':
 
@@ -62,9 +58,9 @@ if __name__ == '__main__':
 
     # MLP
     input_dim = clip_model.visual.output_dim  # Dimension of image features from CLIP
-    hidden_dim = 512
+    hidden_dims = [256, 128] #hidden_dim = 512
     output_dim = 1  # Binary classification
-    classifier = MLP(input_dim, hidden_dim, output_dim).to(device)
+    classifier = MLP(input_dim, hidden_dims, output_dim).to(device)
 
     # Print statistics
     #print("CLIP Architecture:")
