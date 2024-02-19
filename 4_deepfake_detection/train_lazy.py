@@ -20,6 +20,7 @@ TRAIN_CSV_PATH = 'csv/train.csv'
 VAL_CSV_PATH = 'csv/validation.csv'
 SAVE_PATH = 'models_saved'
 SAVE_MODEL=True
+MODAL_MODE = 1 # 0: unimodal (image-only) / 1: multimodal (image+text)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -41,13 +42,13 @@ class MLP(nn.Module):
 if __name__ == '__main__':
 
     # Lazy loading for training dataset
-    train_dataset = LazyImagesDataset(DATA_PATH, TRAIN_CSV_PATH, IMAGE_SIZE, mode="train") 
+    train_dataset = LazyImagesDataset(DATA_PATH, TRAIN_CSV_PATH, IMAGE_SIZE, set="train", modal_mode=MODAL_MODE) 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     len_train_dataset = len(train_dataset)
     #del train_dataset
 
     # Lazy loading for validation dataset
-    val_dataset = LazyImagesDataset(DATA_PATH, VAL_CSV_PATH, IMAGE_SIZE, mode="validation") 
+    val_dataset = LazyImagesDataset(DATA_PATH, VAL_CSV_PATH, IMAGE_SIZE, set="validation", modal_mode=MODAL_MODE) 
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
     len_validation_dataset = len(val_dataset)
     #del val_dataset
@@ -57,8 +58,12 @@ if __name__ == '__main__':
     clip_model, preprocess = clip.load("ViT-B/32", device=device)
 
     # MLP
-    input_dim = clip_model.visual.output_dim  # Dimension of image features from CLIP
-    hidden_dims = [256, 128] #hidden_dim = 512
+    if MODAL_MODE == 0:
+        input_dim = clip_model.visual.output_dim  # dimension of image features from CLIP (512)
+        hidden_dims = [256, 128] 
+    else:
+        input_dim = clip_model.visual.output_dim*2  # dimension of image features + text features from CLIP (1024)
+        hidden_dims = [512, 256, 128] 
     output_dim = 1  # Binary classification
     classifier = MLP(input_dim, hidden_dims, output_dim).to(device)
 
@@ -81,11 +86,14 @@ if __name__ == '__main__':
     print("___________________\n\n")
 
 
-    # loss, and optimizer
+    # loss and optimizer
     loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([class_weights])).to(device)
     optimizer = optim.Adam(classifier.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
     # Training loop
+    starting_msg = "unimodal (image-only)" if MODAL_MODE == 0 else "multimodal (image+text)" if MODAL_MODE == 1 else "unknown"
+    print("Starting train phase in " + starting_msg + " mode...")
+
     best_val_loss = float('inf')
     prev_val_loss = float('inf')
     patience_counter = 0
@@ -100,16 +108,28 @@ if __name__ == '__main__':
         classified_as_label_1_train = 0
         progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch+1}/{NUM_EPOCHS}")
 
-        for index, (images, labels) in progress_bar: #captions
+        for index, (images, captions, labels) in progress_bar:
             images = np.transpose(images, (0, 3, 1, 2))
             images = images.to(device)
+            if MODAL_MODE == 1: 
+                captions = torch.squeeze(captions).to(device)
+
             with torch.no_grad():
                 image_features = clip_model.encode_image(images).float()
                 image_features /= image_features.norm(dim=-1, keepdim=True)
                 labels = labels.float().unsqueeze(1).to(device)
+                if MODAL_MODE == 0:
+                    features = image_features
+                elif MODAL_MODE == 1:                    
+                    text_features = clip_model.encode_text(captions)
+                    text_features /= text_features.norm(dim=-1, keepdim=True)
+                    features = torch.cat((image_features, text_features), dim=1)
+                else:
+                    print("ERROR: unknown modal mode")
+                    exit()
             
             optimizer.zero_grad()
-            outputs = classifier(image_features)
+            outputs = classifier(features.float())
             loss = loss_fn(outputs, labels)
             loss.backward()
             optimizer.step()
@@ -141,14 +161,26 @@ if __name__ == '__main__':
         classified_as_label_1_val = 0
         progress_bar = tqdm(enumerate(val_loader), total=len(val_loader), desc=f"Epoch {epoch+1}/{NUM_EPOCHS} (Validation)")
 
-        for index, (images, labels) in progress_bar:
+        for index, (images, captions, labels) in progress_bar:
             images = np.transpose(images, (0, 3, 1, 2))
             images = images.to(device)
+            if MODAL_MODE == 1: 
+                captions = torch.squeeze(captions).to(device)
+
             with torch.no_grad():
                 image_features = clip_model.encode_image(images).float()
                 labels = labels.float().unsqueeze(1).to(device)
+                if MODAL_MODE == 0:
+                    features = image_features
+                elif MODAL_MODE == 1:                    
+                    text_features = clip_model.encode_text(captions)
+                    features = torch.cat((image_features, text_features), dim=1)
+                else:
+                    print("ERROR: unknown modal mode")
+                    exit()
                 
-                outputs = classifier(image_features)
+                features = torch.nn.functional.normalize(features)
+                outputs = classifier(features.float())
                 loss = loss_fn(outputs, labels)
                 val_loss += loss.item()
                 

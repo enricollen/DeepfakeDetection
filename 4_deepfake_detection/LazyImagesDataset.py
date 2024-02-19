@@ -3,6 +3,7 @@ import warnings
 import cv2
 import pandas as pd
 from torch.utils.data import Dataset
+import clip
 
 from albumentations import Cutout, CoarseDropout, RandomGamma, MedianBlur, ToSepia, RandomShadow, MultiplicativeNoise, RandomSunFlare, GlassBlur, RandomBrightness, MotionBlur, RandomRain, RGBShift, RandomFog, RandomContrast, Downscale, InvertImg, RandomContrast, ColorJitter, Compose, RandomBrightnessContrast, CLAHE, ISONoise, JpegCompression, HorizontalFlip, FancyPCA, HueSaturationValue, OneOf, ToGray, ShiftScaleRotate, ImageCompression, PadIfNeeded, GaussNoise, GaussianBlur, Rotate, Normalize, Resize
 from transforms.albu import CustomRandomCrop, IsotropicResize
@@ -11,12 +12,17 @@ from transforms.albu import CustomRandomCrop, IsotropicResize
 warnings.simplefilter("ignore")
 
 class LazyImagesDataset(Dataset):
-    def __init__(self, data_path, csv_path, size, mode):
+    def __init__(self, data_path, csv_path, size, set, modal_mode):
         self.data_path = data_path
-        self.size=size
+        self.size = size
+        self.mode = modal_mode
         self.df = pd.read_csv(csv_path)
         self.labels = self.df['class'].tolist()
-        if mode=="train":
+
+        if self.mode==1: # multimodal image + text
+            self.captions = self.df['original_caption'].tolist()
+
+        if set=="train":
             self.transform = self.create_train_transforms(self.size)
         else:
             self.transform = self.create_val_transform(self.size)
@@ -27,7 +33,7 @@ class LazyImagesDataset(Dataset):
     
     def create_train_transforms(self, size):
          return Compose([
-                IsotropicResize(max_side=self.size, interpolation_down=cv2.INTER_AREA, interpolation_up=cv2.INTER_CUBIC),
+                IsotropicResize(max_side=self.size, interpolation_down=cv2.INTER_AREA, interpolation_up=cv2.INTER_CUBIC), #CustomRandomCrop(p=1),
                 PadIfNeeded(min_height=size, min_width=size, border_mode=cv2.BORDER_CONSTANT),
                 #Resize(height=size, width=size),
                 ImageCompression(quality_lower=60, quality_upper=100, p=0.2),
@@ -64,4 +70,9 @@ class LazyImagesDataset(Dataset):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = self.transform(image=image)['image']
 
-        return (image, label)
+        if self.mode==0: # unimodal
+            caption = ""
+        else: # multimodal
+            caption = clip.tokenize(self.captions[idx])
+
+        return (image, caption, label)
