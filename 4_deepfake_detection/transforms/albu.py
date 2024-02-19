@@ -1,9 +1,7 @@
 import random
 
 import cv2
-import numpy as np
-from albumentations import DualTransform, ImageOnlyTransform
-from albumentations.augmentations.crops.functional import crop
+from albumentations import DualTransform
 
 
 def isotropically_resize_image(img, size, interpolation_down=cv2.INTER_AREA, interpolation_up=cv2.INTER_CUBIC):
@@ -55,7 +53,7 @@ class CustomRandomCrop(DualTransform):
     def apply(self, img, copy=True, **params):
         # Check if the image dimensions are smaller than self.size
         if img.shape[0] < self.size or img.shape[1] < self.size:
-            x = random.rand()
+            x = random.random()
             if x < 0.3:
                 transform = IsotropicResize(max_side=self.size, interpolation_down=cv2.INTER_LINEAR, interpolation_up=cv2.INTER_LINEAR)
 
