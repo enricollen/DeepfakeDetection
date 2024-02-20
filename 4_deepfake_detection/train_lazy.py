@@ -1,5 +1,6 @@
 import collections
 import os
+import warnings
 import numpy as np
 import torch
 import torch.nn as nn
@@ -8,6 +9,9 @@ import clip
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from LazyImagesDataset import LazyImagesDataset
+
+# Suppress warnings
+warnings.simplefilter("ignore")
 
 IMAGE_SIZE = 224
 NUM_EPOCHS = 30
@@ -20,7 +24,7 @@ TRAIN_CSV_PATH = 'csv/train.csv'
 VAL_CSV_PATH = 'csv/validation.csv'
 SAVE_PATH = 'models_saved'
 SAVE_MODEL=True
-MODAL_MODE = 1 # 0: unimodal (image-only) / 1: multimodal (image+text)
+MODAL_MODE = 0 # 0: unimodal (image-only) / 1: multimodal (image+text)
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -43,13 +47,13 @@ if __name__ == '__main__':
 
     # Lazy loading for training dataset
     train_dataset = LazyImagesDataset(DATA_PATH, TRAIN_CSV_PATH, IMAGE_SIZE, set="train", modal_mode=MODAL_MODE) 
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=10)
     len_train_dataset = len(train_dataset)
     #del train_dataset
 
     # Lazy loading for validation dataset
     val_dataset = LazyImagesDataset(DATA_PATH, VAL_CSV_PATH, IMAGE_SIZE, set="validation", modal_mode=MODAL_MODE) 
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, num_workers=10)
     len_validation_dataset = len(val_dataset)
     #del val_dataset
 
