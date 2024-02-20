@@ -6,27 +6,40 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import clip
+from dotenv import load_dotenv
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from LazyImagesDataset import LazyImagesDataset
 
+load_dotenv()
+
 # Suppress warnings
 warnings.simplefilter("ignore")
-
-IMAGE_SIZE = 224
-NUM_EPOCHS = 30
-LEARNING_RATE = 0.001
-WEIGHT_DECAY = 0.0000001
-BATCH_SIZE = 50
-PATIENCE = 10
-DATA_PATH = 'C:/Users/nello/Desktop/TESI/dataset_after_merging_WITH_DUPLICATES'
-TRAIN_CSV_PATH = 'csv/train.csv'
-VAL_CSV_PATH = 'csv/validation.csv'
-SAVE_PATH = 'models_saved'
-SAVE_MODEL=True
-MODAL_MODE = 0 # 0: unimodal (image-only) / 1: multimodal (image+text)
+warnings.filterwarnings("ignore")
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+IMAGE_SIZE = int(os.getenv('IMAGE_SIZE'))
+NUM_EPOCHS = int(os.getenv('NUM_EPOCHS'))
+LEARNING_RATE = float(os.getenv('LEARNING_RATE'))
+WEIGHT_DECAY = float(os.getenv('WEIGHT_DECAY'))
+BATCH_SIZE = int(os.getenv('BATCH_SIZE'))
+PATIENCE = int(os.getenv('PATIENCE'))
+NUM_WORKERS = int(os.getenv('NUM_WORKERS'))
+HIDDEN_DIMS = eval(os.getenv('HIDDEN_DIMS'))
+DATA_PATH = os.getenv('DATA_PATH')
+TRAIN_CSV_PATH = os.getenv('TRAIN_CSV_PATH')
+VAL_CSV_PATH = os.getenv('VAL_CSV_PATH')
+SAVE_PATH = os.getenv('SAVE_PATH')
+SAVE_MODEL = bool(os.getenv('SAVE_MODEL'))
+MODAL_MODE = int(os.getenv('MODAL_MODE'))
+
+EXPORTED_MODEL_NAME = ''
+if MODAL_MODE == 0:
+    EXPORTED_MODEL_NAME = 'best_unimodal_classifier.pth'
+elif MODAL_MODE == 1:
+    EXPORTED_MODEL_NAME = 'best_multimodal_classifier.pth'
+
 
 class MLP(nn.Module):
     def __init__(self, input_dim, hidden_dims, output_dim):
@@ -47,13 +60,13 @@ if __name__ == '__main__':
 
     # Lazy loading for training dataset
     train_dataset = LazyImagesDataset(DATA_PATH, TRAIN_CSV_PATH, IMAGE_SIZE, set="train", modal_mode=MODAL_MODE) 
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=10)
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS)
     len_train_dataset = len(train_dataset)
     #del train_dataset
 
     # Lazy loading for validation dataset
     val_dataset = LazyImagesDataset(DATA_PATH, VAL_CSV_PATH, IMAGE_SIZE, set="validation", modal_mode=MODAL_MODE) 
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, num_workers=10)
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, num_workers=NUM_WORKERS)
     len_validation_dataset = len(val_dataset)
     #del val_dataset
 
@@ -64,10 +77,11 @@ if __name__ == '__main__':
     # MLP
     if MODAL_MODE == 0:
         input_dim = clip_model.visual.output_dim  # dimension of image features from CLIP (512)
-        hidden_dims = [256, 128] 
+        #hidden_dims = [256, 128] 
     else:
         input_dim = clip_model.visual.output_dim*2  # dimension of image features + text features from CLIP (1024)
-        hidden_dims = [512, 256, 128] 
+        #hidden_dims = [512, 256, 128] 
+    hidden_dims = HIDDEN_DIMS 
     output_dim = 1  # Binary classification
     classifier = MLP(input_dim, hidden_dims, output_dim).to(device)
 
@@ -222,7 +236,7 @@ if __name__ == '__main__':
             if SAVE_MODEL:
                 if not os.path.exists(SAVE_PATH):
                     os.makedirs(SAVE_PATH)
-                model_filename = os.path.join(SAVE_PATH, 'best_classifier.pth')
+                model_filename = os.path.join(SAVE_PATH, EXPORTED_MODEL_NAME)
                 torch.save(classifier.state_dict(), model_filename)
 
         # Early stopping
