@@ -5,7 +5,7 @@ import pandas as pd
 from torch.utils.data import Dataset
 import clip
 
-from albumentations import Cutout, CoarseDropout, RandomGamma, MedianBlur, ToSepia, RandomShadow, MultiplicativeNoise, RandomSunFlare, GlassBlur, RandomBrightness, MotionBlur, RandomRain, RGBShift, RandomFog, RandomContrast, Downscale, InvertImg, RandomContrast, ColorJitter, Compose, RandomBrightnessContrast, CLAHE, ISONoise, JpegCompression, HorizontalFlip, FancyPCA, HueSaturationValue, OneOf, ToGray, ShiftScaleRotate, ImageCompression, PadIfNeeded, GaussNoise, GaussianBlur, Rotate, Normalize, Resize
+from albumentations import CoarseDropout, RandomGamma, MedianBlur, ToSepia, RandomSnow, RandomToneCurve, RandomShadow, MultiplicativeNoise, RandomSunFlare, GlassBlur, MotionBlur, RandomRain, RGBShift, RandomFog, Downscale, InvertImg, ColorJitter, Compose, RandomBrightnessContrast, CLAHE, ISONoise, HorizontalFlip, FancyPCA, HueSaturationValue, OneOf, ToGray, ShiftScaleRotate, ImageCompression, PadIfNeeded, GaussNoise, GaussianBlur, Rotate, Normalize, Resize
 from transforms.albu import CustomRandomCrop, IsotropicResize
 
 # Suppress warnings
@@ -39,12 +39,12 @@ class LazyImagesDataset(Dataset):
                 ImageCompression(quality_lower=60, quality_upper=100, p=0.2),
                 OneOf([GaussianBlur(blur_limit=3), MedianBlur(), GlassBlur(), MotionBlur()], p=0.1),
                 OneOf([HorizontalFlip(), InvertImg()], p=0.5),
-                OneOf([RandomBrightnessContrast(), RandomContrast(), RandomBrightness(), FancyPCA(), HueSaturationValue()], p=0.5),
+                OneOf([RandomBrightnessContrast(), FancyPCA(), HueSaturationValue(), RandomToneCurve()], p=0.5),
                 OneOf([RGBShift(), ColorJitter()], p=0.1),
                 OneOf([MultiplicativeNoise(), ISONoise(), GaussNoise()], p=0.3),
-                OneOf([Cutout(), CoarseDropout()], p=0.1),
-                OneOf([RandomFog(), RandomRain(), RandomSunFlare()], p=0.02),
-                RandomShadow(p=0.05),
+                OneOf([RandomFog(), RandomRain(), RandomSnow(), RandomSunFlare()], p=0.05),
+                CoarseDropout(p=0.1),
+                RandomShadow(p=0.1),
                 RandomGamma(p=0.1),
                 CLAHE(p=0.05),
                 ToGray(p=0.2),
