@@ -5,11 +5,12 @@ import pandas as pd
 from torch.utils.data import Dataset
 import clip
 
-from albumentations import CoarseDropout, RandomGamma, MedianBlur, ToSepia, RandomSnow, RandomToneCurve, RandomShadow, MultiplicativeNoise, RandomSunFlare, GlassBlur, MotionBlur, RandomRain, RGBShift, RandomFog, Downscale, InvertImg, ColorJitter, Compose, RandomBrightnessContrast, CLAHE, ISONoise, HorizontalFlip, FancyPCA, HueSaturationValue, OneOf, ToGray, ShiftScaleRotate, ImageCompression, PadIfNeeded, GaussNoise, GaussianBlur, Rotate, Normalize, Resize
+from albumentations import CoarseDropout, RandomGamma, MedianBlur, ToSepia, RandomSnow, RandomToneCurve, RandomShadow, MultiplicativeNoise, RandomSunFlare, GlassBlur, MotionBlur, RandomRain, RGBShift, RandomFog, Downscale, InvertImg, ColorJitter, Compose, RandomBrightnessContrast, CLAHE, ISONoise, HorizontalFlip, FancyPCA, HueSaturationValue, OneOf, ToGray, ShiftScaleRotate, ImageCompression, PadIfNeeded, GaussNoise, GaussianBlur, Rotate, RandomCrop, Resize
 from transforms.trasformations import CustomRandomCrop, IsotropicResize
 
 # Suppress warnings
 warnings.simplefilter("ignore")
+os.environ["OPENCV_LOG_LEVEL"]="SILENT"
 
 class ImagesDataset(Dataset):
     def __init__(self, data_path, csv_path, size, set, modal_mode):
@@ -33,12 +34,7 @@ class ImagesDataset(Dataset):
     
     def create_train_transforms(self, size):
          return Compose([
-                OneOf(
-                [
-                IsotropicResize(max_side=self.size, interpolation_down=cv2.INTER_AREA, interpolation_up=cv2.INTER_CUBIC), 
-                IsotropicResize(max_side=self.size, interpolation_down=cv2.INTER_LINEAR, interpolation_up=cv2.INTER_LINEAR),
-                IsotropicResize(max_side=self.size, interpolation_down=cv2.INTER_AREA, interpolation_up=cv2.INTER_LINEAR)
-                ], p=1), # equals to CustomRandomCrop(size=self.size, p=1),
+                CustomRandomCrop(size=self.size, p=1),
                 PadIfNeeded(min_height=size, min_width=size, border_mode=cv2.BORDER_CONSTANT),
                 ImageCompression(quality_lower=60, quality_upper=100, p=0.2),
                 OneOf([GaussianBlur(blur_limit=3), MedianBlur(), GlassBlur(), MotionBlur()], p=0.1),
@@ -58,7 +54,7 @@ class ImagesDataset(Dataset):
     
     def create_val_transform(self, size):
         return Compose([
-            IsotropicResize(max_side=size, interpolation_down=cv2.INTER_AREA, interpolation_up=cv2.INTER_CUBIC),
+            CustomRandomCrop(size=self.size, p=1),
             PadIfNeeded(min_height=size, min_width=size, border_mode=cv2.BORDER_CONSTANT),
         ])
     
