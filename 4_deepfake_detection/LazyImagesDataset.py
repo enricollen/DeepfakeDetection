@@ -69,7 +69,7 @@ class LazyImagesDataset(Dataset):
 
         image = cv2.imread(image_path)
         if image is None:
-            return self.__getitem__((idx + 1) % len(self))  # Skip sample and move to the next one
+            return self.__getitem__((idx + 1) % len(self))  # skip sample and move to the next one
         
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = self.transform(image=image)['image']
@@ -77,6 +77,9 @@ class LazyImagesDataset(Dataset):
         if self.mode==0: # unimodal
             caption = ""
         else: # multimodal
-            caption = clip.tokenize(self.captions[idx])
+            caption = self.captions[idx]
+            if len(caption) > 77:  # check if caption length exceeds 77 (clip max text context length)
+                caption = caption[:77]  # truncate caption
+            caption = clip.tokenize(caption)
 
         return (image, caption, label)
