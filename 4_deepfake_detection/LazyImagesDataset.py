@@ -33,9 +33,13 @@ class LazyImagesDataset(Dataset):
     
     def create_train_transforms(self, size):
          return Compose([
-                IsotropicResize(max_side=self.size, interpolation_down=cv2.INTER_AREA, interpolation_up=cv2.INTER_CUBIC), #CustomRandomCrop(p=1),
+                OneOf(
+                [
+                IsotropicResize(max_side=self.size, interpolation_down=cv2.INTER_AREA, interpolation_up=cv2.INTER_CUBIC), 
+                IsotropicResize(max_side=self.size, interpolation_down=cv2.INTER_LINEAR, interpolation_up=cv2.INTER_LINEAR),
+                IsotropicResize(max_side=self.size, interpolation_down=cv2.INTER_AREA, interpolation_up=cv2.INTER_LINEAR)
+                ], p=1), # equals to CustomRandomCrop(size=self.size, p=1),
                 PadIfNeeded(min_height=size, min_width=size, border_mode=cv2.BORDER_CONSTANT),
-                #Resize(height=size, width=size),
                 ImageCompression(quality_lower=60, quality_upper=100, p=0.2),
                 OneOf([GaussianBlur(blur_limit=3), MedianBlur(), GlassBlur(), MotionBlur()], p=0.1),
                 OneOf([HorizontalFlip(), InvertImg()], p=0.5),
