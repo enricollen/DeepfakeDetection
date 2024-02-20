@@ -9,7 +9,7 @@ import clip
 from dotenv import load_dotenv
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from LazyImagesDataset import LazyImagesDataset
+from ImagesDataset import ImagesDataset
 
 load_dotenv()
 
@@ -59,13 +59,13 @@ class MLP(nn.Module):
 if __name__ == '__main__':
 
     # Lazy loading for training dataset
-    train_dataset = LazyImagesDataset(DATA_PATH, TRAIN_CSV_PATH, IMAGE_SIZE, set="train", modal_mode=MODAL_MODE) 
+    train_dataset = ImagesDataset(DATA_PATH, TRAIN_CSV_PATH, IMAGE_SIZE, set="train", modal_mode=MODAL_MODE) 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS)
     len_train_dataset = len(train_dataset)
     #del train_dataset
 
     # Lazy loading for validation dataset
-    val_dataset = LazyImagesDataset(DATA_PATH, VAL_CSV_PATH, IMAGE_SIZE, set="validation", modal_mode=MODAL_MODE) 
+    val_dataset = ImagesDataset(DATA_PATH, VAL_CSV_PATH, IMAGE_SIZE, set="validation", modal_mode=MODAL_MODE) 
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, num_workers=NUM_WORKERS)
     len_validation_dataset = len(val_dataset)
     #del val_dataset
@@ -77,10 +77,8 @@ if __name__ == '__main__':
     # MLP
     if MODAL_MODE == 0:
         input_dim = clip_model.visual.output_dim  # dimension of image features from CLIP (512)
-        #hidden_dims = [256, 128] 
     else:
         input_dim = clip_model.visual.output_dim*2  # dimension of image features + text features from CLIP (1024)
-        #hidden_dims = [512, 256, 128] 
     hidden_dims = HIDDEN_DIMS 
     output_dim = 1  # Binary classification
     classifier = MLP(input_dim, hidden_dims, output_dim).to(device)

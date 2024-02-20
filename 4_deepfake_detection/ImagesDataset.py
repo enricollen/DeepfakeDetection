@@ -6,12 +6,12 @@ from torch.utils.data import Dataset
 import clip
 
 from albumentations import CoarseDropout, RandomGamma, MedianBlur, ToSepia, RandomSnow, RandomToneCurve, RandomShadow, MultiplicativeNoise, RandomSunFlare, GlassBlur, MotionBlur, RandomRain, RGBShift, RandomFog, Downscale, InvertImg, ColorJitter, Compose, RandomBrightnessContrast, CLAHE, ISONoise, HorizontalFlip, FancyPCA, HueSaturationValue, OneOf, ToGray, ShiftScaleRotate, ImageCompression, PadIfNeeded, GaussNoise, GaussianBlur, Rotate, Normalize, Resize
-from transforms.albu import CustomRandomCrop, IsotropicResize
+from transforms.trasformations import CustomRandomCrop, IsotropicResize
 
 # Suppress warnings
 warnings.simplefilter("ignore")
 
-class LazyImagesDataset(Dataset):
+class ImagesDataset(Dataset):
     def __init__(self, data_path, csv_path, size, set, modal_mode):
         self.data_path = data_path
         self.size = size
