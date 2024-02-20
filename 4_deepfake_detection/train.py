@@ -16,6 +16,7 @@ load_dotenv()
 # Suppress warnings
 warnings.simplefilter("ignore")
 warnings.filterwarnings("ignore")
+os.environ["OPENCV_LOG_LEVEL"]="SILENT"
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -128,7 +129,8 @@ if __name__ == '__main__':
             images = np.transpose(images, (0, 3, 1, 2))
             images = images.to(device)
             if MODAL_MODE == 1: 
-                captions = torch.squeeze(captions).to(device)
+                captions = torch.squeeze(captions, dim=1)  # Remove the singleton dimension if present
+                captions = captions.to(device)
 
             with torch.no_grad():
                 image_features = clip_model.encode_image(images).float()
@@ -181,7 +183,8 @@ if __name__ == '__main__':
             images = np.transpose(images, (0, 3, 1, 2))
             images = images.to(device)
             if MODAL_MODE == 1: 
-                captions = torch.squeeze(captions).to(device)
+                captions = torch.squeeze(captions, dim=1)  # Remove the singleton dimension if present
+                captions = captions.to(device)
 
             with torch.no_grad():
                 image_features = clip_model.encode_image(images).float()
@@ -190,6 +193,7 @@ if __name__ == '__main__':
                     features = image_features
                 elif MODAL_MODE == 1:                    
                     text_features = clip_model.encode_text(captions)
+                    text_features /= text_features.norm(dim=-1, keepdim=True)
                     features = torch.cat((image_features, text_features), dim=1)
                 else:
                     print("ERROR: unknown modal mode")
