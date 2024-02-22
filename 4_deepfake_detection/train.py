@@ -4,13 +4,13 @@ import shutil
 import warnings
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.optim as optim
 import clip
 from dotenv import load_dotenv
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from ImagesDataset import ImagesDataset
+from images_dataset import ImagesDataset
+from MLP import MLP
 from LOGGER.logger import Logger
 
 load_dotenv()
@@ -42,28 +42,10 @@ if MODAL_MODE == 0:
     LOG_DIR = 'LOGGER/Unimodal/'
 elif MODAL_MODE == 1:
     EXPORTED_MODEL_NAME = 'best_multimodal_classifier.pth'
-    LOG_DIR = 'LOGGER/Multimodal/'
-
-class MLP(nn.Module):
-    def __init__(self, input_dim, hidden_dims, output_dim):
-        super(MLP, self).__init__()
-        layers = []
-        prev_dim = input_dim
-        for dim in hidden_dims:
-            layers.append(nn.Linear(prev_dim, dim))
-            layers.append(nn.ReLU())
-            prev_dim = dim
-        layers.append(nn.Linear(prev_dim, output_dim))
-        self.mlp = nn.Sequential(*layers)
-    
-    def forward(self, x):
-        return self.mlp(x)
-    
+    LOG_DIR = 'LOGGER/Multimodal/'  
 
 def empty_folder(folder_path):
-    # Check if the folder exists
     if os.path.exists(folder_path):
-        # Iterate over the files in the folder and delete them
         for filename in os.listdir(folder_path):
             file_path = os.path.join(folder_path, filename)
             try:
@@ -76,6 +58,24 @@ def empty_folder(folder_path):
     else:
         print(f"The folder {folder_path} does not exist.")
 
+def print_statistics(classifier, train_dataset, val_dataset, train_counters, class_weights):
+    #print("CLIP Architecture:")
+    #print(clip_model)
+    print("\nMLP Architecture:")
+    print(classifier)
+
+    len_train_dataset = len(train_dataset)
+    len_validation_dataset = len(val_dataset)
+    print("\nTrain images:", len_train_dataset, "Validation images:", len_validation_dataset)
+    print("__TRAINING STATS__")
+    
+    print(train_counters)
+    print("Weights", class_weights)
+
+    print("__VALIDATION STATS__")
+    val_counters = collections.Counter(val_dataset.labels)
+    print(val_counters)
+    print("___________________\n\n")
     
 
 if __name__ == '__main__':
@@ -87,13 +87,11 @@ if __name__ == '__main__':
     # Lazy loading for training dataset
     train_dataset = ImagesDataset(DATA_PATH, TRAIN_CSV_PATH, IMAGE_SIZE, set="train", modal_mode=MODAL_MODE) 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS)
-    len_train_dataset = len(train_dataset)
     #del train_dataset
 
     # Lazy loading for validation dataset
     val_dataset = ImagesDataset(DATA_PATH, VAL_CSV_PATH, IMAGE_SIZE, set="validation", modal_mode=MODAL_MODE) 
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, num_workers=NUM_WORKERS)
-    len_validation_dataset = len(val_dataset)
     #del val_dataset
 
 
@@ -109,28 +107,15 @@ if __name__ == '__main__':
     output_dim = 1  # Binary classification
     classifier = MLP(input_dim, hidden_dims, output_dim).to(device)
 
-    # Print statistics
-    #print("CLIP Architecture:")
-    #print(clip_model)
-    print("\nMLP Architecture:")
-    print(classifier)
-    print("\nTrain images:", len_train_dataset, "Validation images:", len_validation_dataset)
-    print("__TRAINING STATS__")
-    train_counters = collections.Counter(train_dataset.labels)
-    print(train_counters)
-
-    class_weights = train_counters[0] / train_counters[1]
-    print("Weights", class_weights)
-
-    print("__VALIDATION STATS__")
-    val_counters = collections.Counter(val_dataset.labels)
-    print(val_counters)
-    print("___________________\n\n")
-
 
     # loss and optimizer
+    train_counters = collections.Counter(train_dataset.labels)
+    class_weights = train_counters[0] / train_counters[1]
     loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([class_weights])).to(device)
     optimizer = optim.Adam(classifier.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+
+    # Print statistics
+    print_statistics(classifier, train_dataset, val_dataset, train_counters, class_weights)
 
     # Training loop
     starting_msg = "unimodal (image-only)" if MODAL_MODE == 0 else "multimodal (image+text)" if MODAL_MODE == 1 else "unknown"
