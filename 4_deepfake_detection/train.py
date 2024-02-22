@@ -1,5 +1,6 @@
 import collections
 import os
+import shutil
 import warnings
 import numpy as np
 import torch
@@ -10,6 +11,7 @@ from dotenv import load_dotenv
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from ImagesDataset import ImagesDataset
+from LOGGER.logger import Logger
 
 load_dotenv()
 
@@ -35,12 +37,12 @@ SAVE_PATH = os.getenv('SAVE_PATH')
 SAVE_MODEL = bool(os.getenv('SAVE_MODEL'))
 MODAL_MODE = int(os.getenv('MODAL_MODE'))
 
-EXPORTED_MODEL_NAME = ''
 if MODAL_MODE == 0:
     EXPORTED_MODEL_NAME = 'best_unimodal_classifier.pth'
+    LOG_DIR = 'LOGGER/Unimodal/'
 elif MODAL_MODE == 1:
     EXPORTED_MODEL_NAME = 'best_multimodal_classifier.pth'
-
+    LOG_DIR = 'LOGGER/Multimodal/'
 
 class MLP(nn.Module):
     def __init__(self, input_dim, hidden_dims, output_dim):
@@ -56,8 +58,31 @@ class MLP(nn.Module):
     
     def forward(self, x):
         return self.mlp(x)
+    
+
+def empty_folder(folder_path):
+    # Check if the folder exists
+    if os.path.exists(folder_path):
+        # Iterate over the files in the folder and delete them
+        for filename in os.listdir(folder_path):
+            file_path = os.path.join(folder_path, filename)
+            try:
+                if os.path.isfile(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print(f"Failed to delete {file_path}. Reason: {e}")
+    else:
+        print(f"The folder {folder_path} does not exist.")
+
+    
 
 if __name__ == '__main__':
+
+    # Call the function to empty the folder
+    empty_folder("C:/Users/nello/Documents/vscode_projects/Thesis/4_deepfake_detection/LOGGER/Unimodal")
+    empty_folder("C:/Users/nello/Documents/vscode_projects/Thesis/4_deepfake_detection/LOGGER/Multimodal")
 
     # Lazy loading for training dataset
     train_dataset = ImagesDataset(DATA_PATH, TRAIN_CSV_PATH, IMAGE_SIZE, set="train", modal_mode=MODAL_MODE) 
@@ -114,6 +139,9 @@ if __name__ == '__main__':
     best_val_loss = float('inf')
     prev_val_loss = float('inf')
     patience_counter = 0
+
+    LOGGER = Logger(LOG_DIR)
+
     for epoch in range(NUM_EPOCHS):
 
         # Training
@@ -125,11 +153,11 @@ if __name__ == '__main__':
         classified_as_label_1_train = 0
         progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch+1}/{NUM_EPOCHS}")
 
-        for index, (images, captions, labels) in progress_bar:
+        for batch_index, (images, captions, labels) in progress_bar:
             images = np.transpose(images, (0, 3, 1, 2))
             images = images.to(device)
             if MODAL_MODE == 1: 
-                captions = torch.squeeze(captions, dim=1)  # Remove the singleton dimension if present
+                captions = torch.squeeze(captions, dim=1)  # Remove the singleton dimension
                 captions = captions.to(device)
 
             with torch.no_grad():
@@ -145,7 +173,7 @@ if __name__ == '__main__':
                 else:
                     print("ERROR: unknown modal mode")
                     exit()
-            
+
             optimizer.zero_grad()
             outputs = classifier(features.float())
             loss = loss_fn(outputs, labels)
@@ -158,18 +186,34 @@ if __name__ == '__main__':
             total_train += labels.size(0)
 
             train_loss += loss.item()
-            progress_bar.set_postfix(train_loss=train_loss / (index + 1), train_accuracy=correct_train / total_train)
+            progress_bar.set_postfix(train_loss=train_loss / (batch_index + 1), train_accuracy=correct_train / total_train)
 
             # samples classified as label 0 and label 1
             classified_as_label_0_train += torch.sum(predicted_train == 0).item()
             classified_as_label_1_train += torch.sum(predicted_train == 1).item()
 
+            ### LOGGER ### 
+            #log into Tensorboard for generating learning graphs, display batch images and show FC weights distribution
+            if batch_index == 0:  # Only visualize 8 images from first batch 
+                LOGGER.log_image('Batch Images', images) 
+
+            if batch_index % 10 == 0:
+                train_batch_accuracy = correct_train / total_train
+                LOGGER.log_scalar('Train/Accuracy', train_batch_accuracy, epoch * len(train_loader) + batch_index)
+                LOGGER.log_scalar('Train/Loss', loss.item(), epoch * len(train_loader) + batch_index)
+                LOGGER.log_histogram('fc', classifier)                        
+            
+        embeddings=features.cpu().numpy()
+        metadata = labels.cpu().numpy()
+        LOGGER.log_embeddings(embeddings=embeddings, metadata=metadata, step=epoch, tag='Train Embeddings')
+        ### END LOGGER ###
+                
         train_loss /= len(train_loader)
         train_accuracy = correct_train / total_train
         
         print("label 0 (Train):", classified_as_label_0_train)
         print("label 1 (Train):", classified_as_label_1_train)
-        
+
         # Validation
         classifier.eval()
         val_loss = 0.0
@@ -179,11 +223,11 @@ if __name__ == '__main__':
         classified_as_label_1_val = 0
         progress_bar = tqdm(enumerate(val_loader), total=len(val_loader), desc=f"Epoch {epoch+1}/{NUM_EPOCHS} (Validation)")
 
-        for index, (images, captions, labels) in progress_bar:
+        for batch_index, (images, captions, labels) in progress_bar:
             images = np.transpose(images, (0, 3, 1, 2))
             images = images.to(device)
             if MODAL_MODE == 1: 
-                captions = torch.squeeze(captions, dim=1)  # Remove the singleton dimension if present
+                captions = torch.squeeze(captions, dim=1) 
                 captions = captions.to(device)
 
             with torch.no_grad():
@@ -212,8 +256,17 @@ if __name__ == '__main__':
                 # Count samples classified as label 0 and label 1
                 classified_as_label_0_val += torch.sum(predicted_val == 0).item()
                 classified_as_label_1_val += torch.sum(predicted_val == 1).item()
+
+                ### LOGGER ### 
+
+                if batch_index % 10 == 0:
+                    val_batch_accuracy = correct_val / total_val
+                    LOGGER.log_scalar('Validation/Accuracy', val_batch_accuracy, epoch * len(val_loader) + batch_index)
+                    LOGGER.log_scalar('Validation/Loss', loss.item(), epoch * len(val_loader) + batch_index)
+
+                ### END LOGGER ###
             
-            progress_bar.set_postfix(val_loss=val_loss / (index + 1), val_accuracy=correct_val / total_val)
+            progress_bar.set_postfix(val_loss=val_loss / (batch_index + 1), val_accuracy=correct_val / total_val)
 
         val_loss /= len(val_loader)
         val_accuracy = correct_val / total_val
@@ -245,3 +298,5 @@ if __name__ == '__main__':
         if patience_counter >= PATIENCE:
             print("Early stopping.")
             break
+
+    LOGGER.close()
