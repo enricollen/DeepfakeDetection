@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from MLP import MLP  
 from images_dataset import ImagesDataset 
 from sklearn.metrics import f1_score
+import pandas as pd
 
 load_dotenv()
 
@@ -21,6 +22,7 @@ DATA_PATH = os.getenv('DATA_PATH')
 TEST_CSV_PATH = os.getenv('TEST_CSV_PATH')
 MODAL_MODE = int(os.getenv('MODAL_MODE'))
 BEST_MODEL_PATH = os.getenv('BEST_MODEL_PATH')
+REPORT_OUTPUT_PATH = os.getenv('REPORT_OUTPUT_PATH')  # Path to save the report CSV
 
 def load_model(best_model_path):
     print("Loading model...")
@@ -44,6 +46,65 @@ def load_model(best_model_path):
 
     return clip_model, classifier
 
+def print_results():
+    df_test = pd.read_csv(TEST_CSV_PATH)  
+
+    # total count for each combination of attributes in the test set
+    total_real_image_real_text = df_test[(df_test['real_image'] == 1) & (df_test['real_text'] == 1)].shape[0]
+    total_real_image_fake_news_text = df_test[(df_test['real_image'] == 1) & (df_test['fakenews_text'] == 1)].shape[0]
+    total_fake_image_real_text = df_test[(df_test['fake_image'] == 1) & (df_test['real_text'] == 1)].shape[0]
+    total_fake_image_fake_news_text = df_test[(df_test['fake_image'] == 1) & (df_test['fakenews_text'] == 1)].shape[0]
+
+    count_real_image_real_text_misclassified = 0
+    count_real_image_fake_news_text_misclassified = 0
+    count_fake_image_real_text_misclassified = 0
+    count_fake_image_fake_news_text_misclassified = 0
+
+    # for every misclassified image IDs
+    for image_name, _ in misclassified_images:
+        # find the row corresponding to the image ID
+        row = df_test[df_test['id'] == image_name].iloc[0]
+
+        # determine the combination of attributes
+        if row['real_image'] == 1:
+            if row['real_text'] == 1:
+                count_real_image_real_text_misclassified += 1
+            else:
+                count_real_image_fake_news_text_misclassified += 1
+        else:
+            if row['real_text'] == 1:
+                count_fake_image_real_text_misclassified += 1
+            else:
+                count_fake_image_fake_news_text_misclassified += 1
+
+    total_counts = {
+        "Real Image + Real Text": total_real_image_real_text,
+        "Real Image + Fake news text": total_real_image_fake_news_text,
+        "Fake Image + Real Text": total_fake_image_real_text,
+        "Fake Image + Fake news text": total_fake_image_fake_news_text
+    }
+
+    misclassified_counts = {
+        "Real Image + Real Text": count_real_image_real_text_misclassified,
+        "Real Image + Fake news text": count_real_image_fake_news_text_misclassified,
+        "Fake Image + Real Text": count_fake_image_real_text_misclassified,
+        "Fake Image + Fake news text": count_fake_image_fake_news_text_misclassified
+    }
+
+    report_df = pd.DataFrame({
+    'Combination': ['Real Image + Real Text', 'Real Image + Fake news text', 'Fake Image + Real Text', 'Fake Image + Fake news text'],
+    'Missclassified': [misclassified_counts["Real Image + Real Text"], misclassified_counts["Real Image + Fake news text"], misclassified_counts["Fake Image + Real Text"], misclassified_counts["Fake Image + Fake news text"]]
+    })
+
+    # get total count for each combination
+    total_list = [total_counts[combination] for combination in report_df['Combination']]
+    report_df['Total'] = total_list
+    report_df = report_df[['Combination', 'Total', 'Missclassified']]
+
+    return report_df
+
+
+
 if __name__ == "__main__":
     # Load model
     clip_model, classifier = load_model(BEST_MODEL_PATH)
@@ -54,8 +115,9 @@ if __name__ == "__main__":
 
     predictions = []
     ground_truths = []
+    misclassified_images = []
 
-    for batch_index, (images, captions, labels) in tqdm(enumerate(test_loader), total=len(test_loader), desc="Inference"):
+    for batch_index, (image_names, images, captions, labels) in tqdm(enumerate(test_loader), total=len(test_loader), desc="Inference"):
         images = np.transpose(images, (0, 3, 1, 2))
         images = images.to(device)
         if MODAL_MODE == 1: 
@@ -83,11 +145,16 @@ if __name__ == "__main__":
 
             predictions.extend(predicted_test)
             ground_truths.extend(labels)
+            misclassified_images.extend([(image_name, label) for image_name, label, pred in zip(image_names, labels, predicted_test) if pred != label])
 
+    # Performance Eval
     predictions = np.array(predictions)
     ground_truths = np.array(ground_truths)
 
     accuracy = np.mean(predictions == ground_truths)
     f1 = f1_score(ground_truths, predictions, average='binary')
+    print(f"\nAccuracy: {accuracy:.4f} | F1 Score: {f1:.4f}")
 
-    print(f"Accuracy: {accuracy:.4f} | F1 Score: {f1:.4f}")
+    report_df=print_results()
+    print(report_df)
+    #report_df.to_csv("model_performance.csv")

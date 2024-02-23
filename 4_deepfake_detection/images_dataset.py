@@ -16,6 +16,7 @@ class ImagesDataset(Dataset):
     def __init__(self, data_path, csv_path, size, set, modal_mode):
         self.data_path = data_path
         self.size = size
+        self.set = set
         self.mode = modal_mode
         self.df = pd.read_csv(csv_path)
         self.labels = self.df['class'].tolist()
@@ -23,10 +24,10 @@ class ImagesDataset(Dataset):
         if self.mode==1: # multimodal image + text
             self.captions = self.df['original_caption'].tolist()
 
-        if set=="train":
+        if self.set=="train":
             self.transform = self.create_train_transforms(self.size)
         else:
-            self.transform = self.create_val_transform(self.size)
+            self.transform = self.create_val_test_transform(self.size)
         
 
     def __len__(self):
@@ -52,7 +53,7 @@ class ImagesDataset(Dataset):
                 ShiftScaleRotate(shift_limit=0.1, scale_limit=0.2, rotate_limit=5, border_mode=cv2.BORDER_CONSTANT, p=0.5),
             ])
     
-    def create_val_transform(self, size):
+    def create_val_test_transform(self, size):
         return Compose([
             CustomRandomCrop(size=self.size, p=1),
             PadIfNeeded(min_height=size, min_width=size, border_mode=cv2.BORDER_CONSTANT),
@@ -77,5 +78,8 @@ class ImagesDataset(Dataset):
             if len(caption) > 77:  # check if caption length exceeds 77 (clip max text context length)
                 caption = caption[:77]  # truncate caption
             caption = clip.tokenize(caption)
-
-        return (image, caption, label)
+        
+        if self.set == "test":
+            return (image_name, image, caption, label)
+        else: # train and val do not need the image name for evaluating performance
+            return (image, caption, label)
