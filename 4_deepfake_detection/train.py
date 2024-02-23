@@ -81,8 +81,8 @@ def print_statistics(classifier, train_dataset, val_dataset, train_counters, cla
 if __name__ == '__main__':
 
     # Call the function to empty the folder
-    empty_folder("C:/Users/nello/Documents/vscode_projects/Thesis/4_deepfake_detection/LOGGER/Unimodal")
-    empty_folder("C:/Users/nello/Documents/vscode_projects/Thesis/4_deepfake_detection/LOGGER/Multimodal")
+    #empty_folder("LOGGER/Unimodal")
+    #empty_folder("LOGGER/Multimodal")
 
     # Lazy loading for training dataset
     train_dataset = ImagesDataset(DATA_PATH, TRAIN_CSV_PATH, IMAGE_SIZE, set="train", modal_mode=MODAL_MODE) 
@@ -182,15 +182,16 @@ if __name__ == '__main__':
             if batch_index == 0:  # Only visualize 8 images from first batch 
                 LOGGER.log_image('Batch Images', images) 
 
-            if batch_index % 10 == 0:
+            if batch_index % 30 == 0:
                 train_batch_accuracy = correct_train / total_train
                 LOGGER.log_scalar('Train/Accuracy', train_batch_accuracy, epoch * len(train_loader) + batch_index)
                 LOGGER.log_scalar('Train/Loss', loss.item(), epoch * len(train_loader) + batch_index)
-                LOGGER.log_histogram('fc', classifier)                        
+                #LOGGER.log_histogram('fc', classifier)                        
             
-        embeddings=features.cpu().numpy()
-        metadata = labels.cpu().numpy()
-        LOGGER.log_embeddings(embeddings=embeddings, metadata=metadata, step=epoch, tag='Train Embeddings')
+        if epoch==15:
+            embeddings=features.cpu().numpy()
+            metadata = labels.cpu().numpy()
+            LOGGER.log_embeddings(embeddings=embeddings, metadata=metadata, step=epoch, tag='Train Embeddings')
         ### END LOGGER ###
                 
         train_loss /= len(train_loader)
@@ -244,7 +245,7 @@ if __name__ == '__main__':
 
                 ### LOGGER ### 
 
-                if batch_index % 10 == 0:
+                if batch_index % 30 == 0:
                     val_batch_accuracy = correct_val / total_val
                     LOGGER.log_scalar('Validation/Accuracy', val_batch_accuracy, epoch * len(val_loader) + batch_index)
                     LOGGER.log_scalar('Validation/Loss', loss.item(), epoch * len(val_loader) + batch_index)
