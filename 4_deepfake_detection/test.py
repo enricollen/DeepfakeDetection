@@ -18,7 +18,7 @@ IMAGE_SIZE = int(os.getenv('IMAGE_SIZE'))
 BATCH_SIZE = int(os.getenv('BATCH_SIZE'))
 NUM_WORKERS = int(os.getenv('NUM_WORKERS'))
 HIDDEN_DIMS = eval(os.getenv('HIDDEN_DIMS'))
-DATA_PATH = os.getenv('DATA_PATH')
+TEST_DATA_PATH = os.getenv('TEST_DATA_PATH')
 TEST_CSV_PATH = os.getenv('TEST_CSV_PATH')
 MODAL_MODE = int(os.getenv('MODAL_MODE'))
 BEST_MODEL_PATH = os.getenv('BEST_MODEL_PATH')
@@ -38,7 +38,7 @@ def load_model(best_model_path):
     hidden_dims = HIDDEN_DIMS 
     output_dim = 1  # Binary classification
     classifier = MLP(input_dim, hidden_dims, output_dim).to(device)
-    best_model_path = os.path.join(best_model_path, "best_unimodal_classifier.pth" if MODAL_MODE == 0 else "best_multimodal_classifier.pth")
+    best_model_path = "/home/enriconello/DeepFakeDetection/Thesis/4_deepfake_detection/LOGGER/Unimodal/run_4/best_unimodal_classifier.pth" #os.path.join(best_model_path, "best_unimodal_classifier.pth" if MODAL_MODE == 0 else "best_multimodal_classifier.pth")
     classifier.load_state_dict(torch.load(best_model_path))
     classifier.eval() 
 
@@ -50,59 +50,90 @@ def print_results():
     df_test = pd.read_csv(TEST_CSV_PATH)  
 
     # total count for each combination of attributes in the test set
-    total_real_image_real_text = df_test[(df_test['real_image'] == 1) & (df_test['real_text'] == 1)].shape[0]
-    total_real_image_fake_news_text = df_test[(df_test['real_image'] == 1) & (df_test['fakenews_text'] == 1)].shape[0]
-    total_fake_image_real_text = df_test[(df_test['fake_image'] == 1) & (df_test['real_text'] == 1)].shape[0]
-    total_fake_image_fake_news_text = df_test[(df_test['fake_image'] == 1) & (df_test['fakenews_text'] == 1)].shape[0]
+    total_pristine_image_real_text = df_test[(df_test['pristine_image'] == 1) & (df_test['real_text'] == 1)].shape[0]
+    total_pristine_image_fake_news_text = df_test[(df_test['pristine_image'] == 1) & (df_test['fakenews_text'] == 1)].shape[0]
+    total_generated_image_real_text = df_test[(df_test['generated_image'] == 1) & (df_test['real_text'] == 1)].shape[0]
+    total_generated_image_fake_news_text = df_test[(df_test['generated_image'] == 1) & (df_test['fakenews_text'] == 1)].shape[0]
 
-    count_real_image_real_text_misclassified = 0
-    count_real_image_fake_news_text_misclassified = 0
-    count_fake_image_real_text_misclassified = 0
-    count_fake_image_fake_news_text_misclassified = 0
+    count_pristine_image_real_text_misclassified = 0
+    count_pristine_image_fake_news_text_misclassified = 0
+    count_generated_image_real_text_misclassified = 0
+    count_generated_image_fake_news_text_misclassified = 0
+
+    false_positives_pristine_image_real_text = 0
+    false_negatives_pristine_image_real_text = 0
+    false_positives_pristine_image_fake_news_text = 0
+    false_negatives_pristine_image_fake_news_text = 0
+    false_positives_generated_image_real_text = 0
+    false_negatives_generated_image_real_text = 0
+    false_positives_generated_image_fake_news_text = 0
+    false_negatives_generated_image_fake_news_text = 0
 
     # for every misclassified image IDs
-    for image_name, _ in misclassified_images:
+    for image_name, true_label in misclassified_images:
         # find the row corresponding to the image ID
         row = df_test[df_test['id'] == image_name].iloc[0]
 
         # determine the combination of attributes
-        if row['real_image'] == 1:
+        if row['pristine_image'] == 1:
             if row['real_text'] == 1:
-                count_real_image_real_text_misclassified += 1
+                count_pristine_image_real_text_misclassified += 1
+                if true_label == 0:  # False positives
+                    false_positives_pristine_image_real_text += 1
+                elif true_label == 1:  # False negatives
+                    false_negatives_pristine_image_real_text += 1
             else:
-                count_real_image_fake_news_text_misclassified += 1
+                count_pristine_image_fake_news_text_misclassified += 1
+                if true_label == 0:  # False positives
+                    false_positives_pristine_image_fake_news_text += 1
+                elif true_label == 1:  # False negatives
+                    false_negatives_pristine_image_fake_news_text += 1
         else:
             if row['real_text'] == 1:
-                count_fake_image_real_text_misclassified += 1
+                count_generated_image_real_text_misclassified += 1
+                if true_label == 0:  # False positives
+                    false_positives_generated_image_real_text += 1
+                elif true_label == 1:  # False negatives
+                    false_negatives_generated_image_real_text += 1
             else:
-                count_fake_image_fake_news_text_misclassified += 1
+                count_generated_image_fake_news_text_misclassified += 1
+                if true_label == 0:  # False positives
+                    false_positives_generated_image_fake_news_text += 1
+                elif true_label == 1:  # False negatives
+                    false_negatives_generated_image_fake_news_text += 1
 
     total_counts = {
-        "Real Image + Real Text": total_real_image_real_text,
-        "Real Image + Fake news text": total_real_image_fake_news_text,
-        "Fake Image + Real Text": total_fake_image_real_text,
-        "Fake Image + Fake news text": total_fake_image_fake_news_text
+        "Pristine Image + Real Text": total_pristine_image_real_text,
+        "Pristine Image + Fake news text": total_pristine_image_fake_news_text,
+        "Generated Image + Real Text": total_generated_image_real_text,
+        "Generated Image + Fake news text": total_generated_image_fake_news_text
     }
 
     misclassified_counts = {
-        "Real Image + Real Text": count_real_image_real_text_misclassified,
-        "Real Image + Fake news text": count_real_image_fake_news_text_misclassified,
-        "Fake Image + Real Text": count_fake_image_real_text_misclassified,
-        "Fake Image + Fake news text": count_fake_image_fake_news_text_misclassified
+        "Pristine Image + Real Text": count_pristine_image_real_text_misclassified,
+        "Pristine Image + Fake news text": count_pristine_image_fake_news_text_misclassified,
+        "Generated Image + Real Text": count_generated_image_real_text_misclassified,
+        "Generated Image + Fake news text": count_generated_image_fake_news_text_misclassified
     }
 
+    false_positive_percentage_pristine_image_real_text = (false_positives_pristine_image_real_text / total_pristine_image_real_text) * 100 if total_pristine_image_real_text > 0 else 0
+    false_negative_percentage_pristine_image_real_text = (false_negatives_pristine_image_real_text / total_pristine_image_real_text) * 100 if total_pristine_image_real_text > 0 else 0
+    false_positive_percentage_pristine_image_fake_news_text = (false_positives_pristine_image_fake_news_text / total_pristine_image_fake_news_text) * 100 if total_pristine_image_fake_news_text > 0 else 0
+    false_negative_percentage_pristine_image_fake_news_text = (false_negatives_pristine_image_fake_news_text / total_pristine_image_fake_news_text) * 100 if total_pristine_image_fake_news_text > 0 else 0
+    false_positive_percentage_generated_image_real_text = (false_positives_generated_image_real_text / total_generated_image_real_text) * 100 if total_generated_image_real_text > 0 else 0
+    false_negative_percentage_generated_image_real_text = (false_negatives_generated_image_real_text / total_generated_image_real_text) * 100 if total_generated_image_real_text > 0 else 0
+    false_positive_percentage_generated_image_fake_news_text = (false_positives_generated_image_fake_news_text / total_generated_image_fake_news_text) * 100 if total_generated_image_fake_news_text > 0 else 0
+    false_negative_percentage_generated_image_fake_news_text = (false_negatives_generated_image_fake_news_text / total_generated_image_fake_news_text) * 100 if total_generated_image_fake_news_text > 0 else 0
+
     report_df = pd.DataFrame({
-    'Combination': ['Real Image + Real Text', 'Real Image + Fake news text', 'Fake Image + Real Text', 'Fake Image + Fake news text'],
-    'Missclassified': [misclassified_counts["Real Image + Real Text"], misclassified_counts["Real Image + Fake news text"], misclassified_counts["Fake Image + Real Text"], misclassified_counts["Fake Image + Fake news text"]]
+        'Combination': ['Pristine Image + Real Text', 'Pristine Image + Fake news text', 'Generated Image + Real Text', 'Generated Image + Fake news text'],
+        'Total': [total_counts["Pristine Image + Real Text"], total_counts["Pristine Image + Fake news text"], total_counts["Generated Image + Real Text"], total_counts["Generated Image + Fake news text"]],
+        'Missclassified': [misclassified_counts["Pristine Image + Real Text"], misclassified_counts["Pristine Image + Fake news text"], misclassified_counts["Generated Image + Real Text"], misclassified_counts["Generated Image + Fake news text"]],
+        'False Positive %': [false_positive_percentage_pristine_image_real_text, false_positive_percentage_pristine_image_fake_news_text, false_positive_percentage_generated_image_real_text, false_positive_percentage_generated_image_fake_news_text],
+        'False Negative %': [false_negative_percentage_pristine_image_real_text, false_negative_percentage_pristine_image_fake_news_text, false_negative_percentage_generated_image_real_text, false_negative_percentage_generated_image_fake_news_text]
     })
 
-    # get total count for each combination
-    total_list = [total_counts[combination] for combination in report_df['Combination']]
-    report_df['Total'] = total_list
-    report_df = report_df[['Combination', 'Total', 'Missclassified']]
-
     return report_df
-
 
 
 if __name__ == "__main__":
@@ -110,7 +141,7 @@ if __name__ == "__main__":
     clip_model, classifier = load_model(BEST_MODEL_PATH)
 
     # dataset and dataloader for evaluation
-    test_dataset = ImagesDataset(DATA_PATH, TEST_CSV_PATH, IMAGE_SIZE, set="test", modal_mode=MODAL_MODE)  
+    test_dataset = ImagesDataset(TEST_DATA_PATH, TEST_CSV_PATH, IMAGE_SIZE, set="test", modal_mode=MODAL_MODE)  
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)
 
     predictions = []
