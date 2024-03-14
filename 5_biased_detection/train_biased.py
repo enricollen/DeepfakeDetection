@@ -327,5 +327,3 @@ if __name__ == '__main__':
         if patience_counter >= PATIENCE:
             print("Early stopping.")
             break
-
-    LOGGER.close()
