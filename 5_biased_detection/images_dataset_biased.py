@@ -61,8 +61,17 @@ class ImagesDatasetBiased(Dataset):
         ])
     
     def __getitem__(self, idx):
-        image_name = self.df.iloc[idx]['id']
-        label = self.labels[idx]  
+        label = self.labels[idx] 
+        type = self.type[idx]
+        
+        if self.set != "test":
+            if label == 0:
+                image_name = self.df.iloc[idx]['id']
+            else:
+                image_name = self.df.iloc[idx]['fake_id']
+        else:
+            image_name = self.df.iloc[idx]['id']
+            
         image_path = os.path.join(self.data_path, image_name + '.jpg')
 
         image = cv2.imread(image_path)
@@ -83,4 +92,4 @@ class ImagesDatasetBiased(Dataset):
         if self.set == "test":
             return (image_name, image, caption, label)
         else: # train and val do not need the image name for evaluating performance
-            return (image, caption, label)
+            return (image, caption, label, type)
