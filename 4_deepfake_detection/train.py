@@ -30,19 +30,21 @@ BATCH_SIZE = int(os.getenv('BATCH_SIZE'))
 PATIENCE = int(os.getenv('PATIENCE'))
 NUM_WORKERS = int(os.getenv('NUM_WORKERS'))
 HIDDEN_DIMS = eval(os.getenv('HIDDEN_DIMS'))
-DATA_PATH = os.getenv('DATA_PATH')
+TRAIN_DATA_PATH = os.getenv('TRAIN_DATA_PATH')
+VALIDATION_DATA_PATH = os.getenv('VALIDATION_DATA_PATH')
 TRAIN_CSV_PATH = os.getenv('TRAIN_CSV_PATH')
 VAL_CSV_PATH = os.getenv('VAL_CSV_PATH')
 SAVE_PATH = os.getenv('SAVE_PATH')
 SAVE_MODEL = bool(os.getenv('SAVE_MODEL'))
 MODAL_MODE = int(os.getenv('MODAL_MODE'))
+LOG_DIR = os.getenv('LOG_DIR')
 
 if MODAL_MODE == 0:
     EXPORTED_MODEL_NAME = 'best_unimodal_classifier.pth'
-    LOG_DIR = 'LOGGER/Unimodal/'
+    #LOG_DIR = 'LOGGER/Unimodal/run_4'
 elif MODAL_MODE == 1:
     EXPORTED_MODEL_NAME = 'best_multimodal_classifier.pth'
-    LOG_DIR = 'LOGGER/Multimodal/'  
+    #LOG_DIR = 'LOGGER/Multimodal/run_4'  
 
 def empty_folder(folder_path):
     if os.path.exists(folder_path):
@@ -85,13 +87,13 @@ if __name__ == '__main__':
     #empty_folder("LOGGER/Multimodal")
 
     # Lazy loading for training dataset
-    train_dataset = ImagesDataset(DATA_PATH, TRAIN_CSV_PATH, IMAGE_SIZE, set="train", modal_mode=MODAL_MODE) 
+    train_dataset = ImagesDataset(TRAIN_DATA_PATH, TRAIN_CSV_PATH, IMAGE_SIZE, set="train", modal_mode=MODAL_MODE) 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS)
     #del train_dataset
 
     # Lazy loading for validation dataset
-    val_dataset = ImagesDataset(DATA_PATH, VAL_CSV_PATH, IMAGE_SIZE, set="validation", modal_mode=MODAL_MODE) 
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, num_workers=NUM_WORKERS)
+    val_dataset = ImagesDataset(VALIDATION_DATA_PATH, VAL_CSV_PATH, IMAGE_SIZE, set="validation", modal_mode=MODAL_MODE) 
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS)
     #del val_dataset
 
 
@@ -111,7 +113,8 @@ if __name__ == '__main__':
     # loss and optimizer
     train_counters = collections.Counter(train_dataset.labels)
     class_weights = train_counters[0] / train_counters[1]
-    loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([class_weights])).to(device)
+    #loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([class_weights])).to(device)
+    loss_fn = torch.nn.BCEWithLogitsLoss().to(device)
     optimizer = optim.Adam(classifier.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
     # Print statistics
@@ -179,19 +182,19 @@ if __name__ == '__main__':
 
             ### LOGGER ### 
             #log into Tensorboard for generating learning graphs, display batch images and show FC weights distribution
-            if batch_index == 0:  # Only visualize 8 images from first batch 
-                LOGGER.log_image('Batch Images', images) 
+            """if batch_index == 0:  # Only visualize 8 images from first batch 
+                LOGGER.log_image('Batch Images', images) """
 
-            if batch_index % 30 == 0:
+            if batch_index % 50 == 0:
                 train_batch_accuracy = correct_train / total_train
                 LOGGER.log_scalar('Train/Accuracy', train_batch_accuracy, epoch * len(train_loader) + batch_index)
                 LOGGER.log_scalar('Train/Loss', loss.item(), epoch * len(train_loader) + batch_index)
-                #LOGGER.log_histogram('fc', classifier)                        
+                #LOGGER.log_histogram('fc', classifier)                  
             
-        if epoch==15:
-            embeddings=features.cpu().numpy()
-            metadata = labels.cpu().numpy()
-            LOGGER.log_embeddings(embeddings=embeddings, metadata=metadata, step=epoch, tag='Train Embeddings')
+        #if epoch==15:
+            #embeddings=features.cpu().numpy()
+            #metadata = labels.cpu().numpy()
+            #LOGGER.log_embeddings(embeddings=embeddings, metadata=metadata, step=epoch, tag='Train Embeddings')
         ### END LOGGER ###
                 
         train_loss /= len(train_loader)
@@ -245,11 +248,11 @@ if __name__ == '__main__':
 
                 ### LOGGER ### 
 
-                if batch_index % 30 == 0:
+                if batch_index % 50 == 0:
                     val_batch_accuracy = correct_val / total_val
                     LOGGER.log_scalar('Validation/Accuracy', val_batch_accuracy, epoch * len(val_loader) + batch_index)
                     LOGGER.log_scalar('Validation/Loss', loss.item(), epoch * len(val_loader) + batch_index)
-
+                
                 ### END LOGGER ###
             
             progress_bar.set_postfix(val_loss=val_loss / (batch_index + 1), val_accuracy=correct_val / total_val)
@@ -279,6 +282,7 @@ if __name__ == '__main__':
                     os.makedirs(SAVE_PATH)
                 model_filename = os.path.join(SAVE_PATH, EXPORTED_MODEL_NAME)
                 torch.save(classifier.state_dict(), model_filename)
+                print("New best model saved")
 
         # Early stopping
         if patience_counter >= PATIENCE:
