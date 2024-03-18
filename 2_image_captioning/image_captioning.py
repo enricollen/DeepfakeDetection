@@ -69,9 +69,9 @@ def caption_and_save_images(df, save_path):
     result_df = pd.merge(df, generated_captions_df, left_on="id", right_on="image_name", how="left")
 
     # Create a new DataFrame with 'id', 'original_caption', and 'caption'
-    result_df = result_df[['id', 'clean_title', 'caption']]
+    result_df = result_df[['id', 'original_caption', 'caption']]
 
-    result_df = result_df.rename(columns={'clean_title': 'original_caption', 'caption': 'generated_caption'})
+    result_df = result_df.rename(columns={'caption': 'generated_caption'})
     result_df.to_csv(save_path, index=False, header=True, sep=',', encoding='utf-8')
     
 
