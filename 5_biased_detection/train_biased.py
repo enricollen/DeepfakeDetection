@@ -37,6 +37,7 @@ VAL_CSV_PATH = os.getenv('VAL_CSV_PATH')
 SAVE_PATH = os.getenv('SAVE_PATH')
 SAVE_MODEL = bool(os.getenv('SAVE_MODEL'))
 MODAL_MODE = int(os.getenv('MODAL_MODE'))
+HYPERPARAMETERS_DUMP_PATH = os.getenv('LOG_DIR')
 LOG_DIR = os.getenv('LOG_DIR')
 
 if MODAL_MODE == 0:
@@ -44,7 +45,7 @@ if MODAL_MODE == 0:
 elif MODAL_MODE == 1:
     EXPORTED_MODEL_NAME = 'best_multimodal_classifier.pth'
 
-def print_statistics(classifier, train_dataset, val_dataset, train_counters, class_weights):
+def print_statistics(classifier, train_dataset, val_dataset, train_counters, val_counters, class_weights):
     print("\nMLP Architecture:")
     print(classifier)
 
@@ -57,10 +58,24 @@ def print_statistics(classifier, train_dataset, val_dataset, train_counters, cla
     print("Weights", class_weights)
 
     print("__VALIDATION STATS__")
-    val_counters = collections.Counter(val_dataset.labels)
     print(val_counters)
     print("___________________\n\n")
     
+def hyperparameters_dump(len_train, len_validation):
+    if not os.path.exists(HYPERPARAMETERS_DUMP_PATH):
+        os.makedirs(HYPERPARAMETERS_DUMP_PATH)
+        
+    with open(HYPERPARAMETERS_DUMP_PATH+"/params.txt", "w") as f:
+        f.write("NUM_EPOCHS=" + str(NUM_EPOCHS) + "\n")
+        f.write("LEARNING_RATE=" + str(LEARNING_RATE) + "\n")
+        f.write("WEIGHT_DECAY=" + str(WEIGHT_DECAY) + "\n")
+        f.write("BATCH_SIZE=" + str(BATCH_SIZE) + "\n")
+        f.write("PATIENCE=" + str(PATIENCE) + "\n")
+        f.write("NUM_WORKERS=" + str(NUM_WORKERS) + "\n")
+        f.write("HIDDEN_DIMS=" + str(HIDDEN_DIMS) + "\n")
+        f.write("----------------------------------\n")
+        f.write("Train samples = " + len_train + "\n")
+        f.write("Validation samples = " + len_validation + "\n")
     
 class BalancedSampler(torch.utils.data.sampler.Sampler):
     def __init__(self, dataset):
@@ -111,11 +126,14 @@ if __name__ == '__main__':
 
     train_dataset = ImagesDatasetBiased(TRAIN_DATA_PATH, TRAIN_CSV_PATH, IMAGE_SIZE, set="train", modal_mode=MODAL_MODE)
     train_sampler = BalancedSampler(train_dataset)  
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, sampler=train_sampler, num_workers=NUM_WORKERS) 
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, sampler=train_sampler, num_workers=NUM_WORKERS)
 
     val_dataset = ImagesDatasetBiased(VALIDATION_DATA_PATH, VAL_CSV_PATH, IMAGE_SIZE, set="validation", modal_mode=MODAL_MODE) 
-    val_sampler = BalancedSampler(val_dataset)  
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, sampler=val_sampler, num_workers=NUM_WORKERS) 
+    #val_sampler = BalancedSampler(val_dataset)  
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS) #sampler=val_sampler
+
+    # Hyperparameters dump
+    hyperparameters_dump(str(len(train_dataset)), str(len(val_dataset)))
 
     # CLIP
     clip_model, preprocess = clip.load("ViT-B/32", device=device)
@@ -129,15 +147,15 @@ if __name__ == '__main__':
     output_dim = 1  # Binary classification
     classifier = MLP(input_dim, hidden_dims, output_dim).to(device)
 
-
     # loss and optimizer
     train_counters = collections.Counter(train_dataset.labels)
+    val_counters = collections.Counter(val_dataset.labels)
     class_weights = train_counters[0] / train_counters[1]
     loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([class_weights])).to(device)
     optimizer = optim.Adam(classifier.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
     # Print statistics
-    print_statistics(classifier, train_dataset, val_dataset, train_counters, class_weights)
+    print_statistics(classifier, train_dataset, val_dataset, train_counters, val_counters, class_weights)
 
     # Training loop
     starting_msg = "unimodal (image-only)" if MODAL_MODE == 0 else "multimodal (image+text)" if MODAL_MODE == 1 else "unknown"
