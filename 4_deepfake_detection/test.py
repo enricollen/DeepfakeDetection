@@ -38,7 +38,7 @@ def load_model(best_model_path):
     hidden_dims = HIDDEN_DIMS 
     output_dim = 1  # Binary classification
     classifier = MLP(input_dim, hidden_dims, output_dim).to(device)
-    best_model_path = "/home/enriconello/DeepFakeDetection/Thesis/4_deepfake_detection/LOGGER/Unimodal/run_4/best_unimodal_classifier.pth" #os.path.join(best_model_path, "best_unimodal_classifier.pth" if MODAL_MODE == 0 else "best_multimodal_classifier.pth")
+    best_model_path = '/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_2_multimodal/run7/best_multimodal_classifier.pth' #os.path.join(best_model_path, "best_unimodal_classifier.pth" if MODAL_MODE == 0 else "best_multimodal_classifier.pth")
     classifier.load_state_dict(torch.load(best_model_path))
     classifier.eval() 
 
@@ -46,93 +46,58 @@ def load_model(best_model_path):
 
     return clip_model, classifier
 
-def print_results():
+def print_results(classified_images):
     df_test = pd.read_csv(TEST_CSV_PATH)  
 
-    # total count for each combination of attributes in the test set
-    total_pristine_image_real_text = df_test[(df_test['pristine_image'] == 1) & (df_test['real_text'] == 1)].shape[0]
-    total_pristine_image_fake_news_text = df_test[(df_test['pristine_image'] == 1) & (df_test['fakenews_text'] == 1)].shape[0]
-    total_generated_image_real_text = df_test[(df_test['generated_image'] == 1) & (df_test['real_text'] == 1)].shape[0]
-    total_generated_image_fake_news_text = df_test[(df_test['generated_image'] == 1) & (df_test['fakenews_text'] == 1)].shape[0]
-
-    count_pristine_image_real_text_misclassified = 0
-    count_pristine_image_fake_news_text_misclassified = 0
-    count_generated_image_real_text_misclassified = 0
-    count_generated_image_fake_news_text_misclassified = 0
-
-    false_positives_pristine_image_real_text = 0
-    false_negatives_pristine_image_real_text = 0
-    false_positives_pristine_image_fake_news_text = 0
-    false_negatives_pristine_image_fake_news_text = 0
-    false_positives_generated_image_real_text = 0
-    false_negatives_generated_image_real_text = 0
-    false_positives_generated_image_fake_news_text = 0
-    false_negatives_generated_image_fake_news_text = 0
-
-    # for every misclassified image IDs
-    for image_name, true_label in misclassified_images:
-        # find the row corresponding to the image ID
-        row = df_test[df_test['id'] == image_name].iloc[0]
-
-        # determine the combination of attributes
-        if row['pristine_image'] == 1:
-            if row['real_text'] == 1:
-                count_pristine_image_real_text_misclassified += 1
-                if true_label == 0:  # False positives
-                    false_positives_pristine_image_real_text += 1
-                elif true_label == 1:  # False negatives
-                    false_negatives_pristine_image_real_text += 1
-            else:
-                count_pristine_image_fake_news_text_misclassified += 1
-                if true_label == 0:  # False positives
-                    false_positives_pristine_image_fake_news_text += 1
-                elif true_label == 1:  # False negatives
-                    false_negatives_pristine_image_fake_news_text += 1
-        else:
-            if row['real_text'] == 1:
-                count_generated_image_real_text_misclassified += 1
-                if true_label == 0:  # False positives
-                    false_positives_generated_image_real_text += 1
-                elif true_label == 1:  # False negatives
-                    false_negatives_generated_image_real_text += 1
-            else:
-                count_generated_image_fake_news_text_misclassified += 1
-                if true_label == 0:  # False positives
-                    false_positives_generated_image_fake_news_text += 1
-                elif true_label == 1:  # False negatives
-                    false_negatives_generated_image_fake_news_text += 1
-
-    total_counts = {
-        "Pristine Image + Real Text": total_pristine_image_real_text,
-        "Pristine Image + Fake news text": total_pristine_image_fake_news_text,
-        "Generated Image + Real Text": total_generated_image_real_text,
-        "Generated Image + Fake news text": total_generated_image_fake_news_text
+    # counters for TP, TN, FP, FN for each category
+    counts = {
+        "Pristine Image + Real Text": {"TP": 0, "TN": 0, "FP": 0, "FN": 0},
+        "Pristine Image + Fake News Text": {"TP": 0, "TN": 0, "FP": 0, "FN": 0},
+        "Generated Image + Real Text": {"TP": 0, "TN": 0, "FP": 0, "FN": 0},
+        "Generated Image + Fake News Text": {"TP": 0, "TN": 0, "FP": 0, "FN": 0},
     }
 
-    misclassified_counts = {
-        "Pristine Image + Real Text": count_pristine_image_real_text_misclassified,
-        "Pristine Image + Fake news text": count_pristine_image_fake_news_text_misclassified,
-        "Generated Image + Real Text": count_generated_image_real_text_misclassified,
-        "Generated Image + Fake news text": count_generated_image_fake_news_text_misclassified
-    }
+    # Define the mapping from image name to attributes
+    attributes_map = {row['id']: (row['pristine_image'], row['real_text'], row['fakenews_text']) for _, row in df_test.iterrows()}
 
-    false_positive_percentage_pristine_image_real_text = (false_positives_pristine_image_real_text / total_pristine_image_real_text) * 100 if total_pristine_image_real_text > 0 else 0
-    false_negative_percentage_pristine_image_real_text = (false_negatives_pristine_image_real_text / total_pristine_image_real_text) * 100 if total_pristine_image_real_text > 0 else 0
-    false_positive_percentage_pristine_image_fake_news_text = (false_positives_pristine_image_fake_news_text / total_pristine_image_fake_news_text) * 100 if total_pristine_image_fake_news_text > 0 else 0
-    false_negative_percentage_pristine_image_fake_news_text = (false_negatives_pristine_image_fake_news_text / total_pristine_image_fake_news_text) * 100 if total_pristine_image_fake_news_text > 0 else 0
-    false_positive_percentage_generated_image_real_text = (false_positives_generated_image_real_text / total_generated_image_real_text) * 100 if total_generated_image_real_text > 0 else 0
-    false_negative_percentage_generated_image_real_text = (false_negatives_generated_image_real_text / total_generated_image_real_text) * 100 if total_generated_image_real_text > 0 else 0
-    false_positive_percentage_generated_image_fake_news_text = (false_positives_generated_image_fake_news_text / total_generated_image_fake_news_text) * 100 if total_generated_image_fake_news_text > 0 else 0
-    false_negative_percentage_generated_image_fake_news_text = (false_negatives_generated_image_fake_news_text / total_generated_image_fake_news_text) * 100 if total_generated_image_fake_news_text > 0 else 0
+    # Process each classified image
+    for image_name, true_label, predicted_label, status in classified_images:
+        pristine, real_text, fake_news_text = attributes_map[image_name]
+        category = None
 
-    report_df = pd.DataFrame({
-        'Combination': ['Pristine Image + Real Text', 'Pristine Image + Fake news text', 'Generated Image + Real Text', 'Generated Image + Fake news text'],
-        'Total': [total_counts["Pristine Image + Real Text"], total_counts["Pristine Image + Fake news text"], total_counts["Generated Image + Real Text"], total_counts["Generated Image + Fake news text"]],
-        'Missclassified': [misclassified_counts["Pristine Image + Real Text"], misclassified_counts["Pristine Image + Fake news text"], misclassified_counts["Generated Image + Real Text"], misclassified_counts["Generated Image + Fake news text"]],
-        'False Positive %': [false_positive_percentage_pristine_image_real_text, false_positive_percentage_pristine_image_fake_news_text, false_positive_percentage_generated_image_real_text, false_positive_percentage_generated_image_fake_news_text],
-        'False Negative %': [false_negative_percentage_pristine_image_real_text, false_negative_percentage_pristine_image_fake_news_text, false_negative_percentage_generated_image_real_text, false_negative_percentage_generated_image_fake_news_text]
-    })
+        # Determine the category
+        if pristine == 1 and real_text == 1:
+            category = "Pristine Image + Real Text"
+        elif pristine == 1 and fake_news_text == 1:
+            category = "Pristine Image + Fake News Text"
+        elif pristine == 0 and real_text == 1:
+            category = "Generated Image + Real Text"
+        elif pristine == 0 and fake_news_text == 1:
+            category = "Generated Image + Fake News Text"
 
+        if category:
+            if true_label == predicted_label == 1:
+                counts[category]["TP"] += 1
+            elif true_label == predicted_label == 0:
+                counts[category]["TN"] += 1
+            elif true_label == 0 and predicted_label == 1:
+                counts[category]["FP"] += 1
+            elif true_label == 1 and predicted_label == 0:
+                counts[category]["FN"] += 1
+
+    # FPR and FNR for each category
+    report_data = []
+    for category, metrics in counts.items():
+        TP, TN, FP, FN = metrics["TP"], metrics["TN"], metrics["FP"], metrics["FN"]
+        FPR = FP / (FP + TN) if (FP + TN) > 0 else 0
+        FNR = FN / (TP + FN) if (TP + FN) > 0 else 0
+        total = TP + TN + FP + FN
+        misclassified = FP + FN
+
+        report_data.append([category, total, misclassified, FPR*100, FNR*100])
+
+    # Create DataFrame for report
+    report_df = pd.DataFrame(report_data, columns=['Combination', 'Total', 'Misclassified', 'False Positive %', 'False Negative %'])
     return report_df
 
 
@@ -146,7 +111,8 @@ if __name__ == "__main__":
 
     predictions = []
     ground_truths = []
-    misclassified_images = []
+    #misclassified_images = []
+    classified_images = []
 
     for batch_index, (image_names, images, captions, labels) in tqdm(enumerate(test_loader), total=len(test_loader), desc="Inference"):
         images = np.transpose(images, (0, 3, 1, 2))
@@ -176,7 +142,11 @@ if __name__ == "__main__":
 
             predictions.extend(predicted_test)
             ground_truths.extend(labels)
-            misclassified_images.extend([(image_name, label) for image_name, label, pred in zip(image_names, labels, predicted_test) if pred != label])
+            #misclassified_images.extend([(image_name, label) for image_name, label, pred in zip(image_names, labels, predicted_test) if pred != label])
+
+            for image_name, true_label, pred in zip(image_names, labels, predicted_test.flatten()):
+                classification_status = 'Correctly Classified' if pred == true_label else 'Misclassified'
+                classified_images.append((image_name if isinstance(image_name, str) else image_name.item(), true_label.item(), pred.item(), classification_status))
 
     # Performance Eval
     predictions = np.array(predictions)
@@ -186,6 +156,6 @@ if __name__ == "__main__":
     f1 = f1_score(ground_truths, predictions, average='binary')
     print(f"\nAccuracy: {accuracy:.4f} | F1 Score: {f1:.4f}")
 
-    report_df=print_results()
+    report_df = print_results(classified_images)
     print(report_df)
     #report_df.to_csv("model_performance.csv")

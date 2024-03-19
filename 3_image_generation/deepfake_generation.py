@@ -6,7 +6,7 @@ import pandas as pd
 from torch.cuda.amp import autocast
 from dotenv import load_dotenv
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 load_dotenv()
 
@@ -111,7 +111,7 @@ class Txt2ImgGenerator:
         generated_info_df = pd.DataFrame(self.generated_image_info)
         input_df = pd.read_csv(INPUT_CSV_PATH)
         result_df = pd.merge(input_df.iloc[START_INDEX:END_INDEX], generated_info_df, on='id', how='left')
-        result_df['class'] = 'fake' # from 'pristine' now they will be 'fake'
+        #result_df['class'] = 'fake' # from 'pristine' now they will be 'fake'
 
         result_df.to_csv(destination_dir, index=False)
 
