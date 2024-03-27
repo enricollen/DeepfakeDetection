@@ -51,9 +51,9 @@ def print_results(classified_images):
 
     # counters for TP, TN, FP, FN for each category
     counts = {
-        "Pristine Image + Real Text": {"TP": 0, "TN": 0, "FP": 0, "FN": 0},
+        "Pristine Image + Truthful Text": {"TP": 0, "TN": 0, "FP": 0, "FN": 0},
         "Pristine Image + Fake News Text": {"TP": 0, "TN": 0, "FP": 0, "FN": 0},
-        "Generated Image + Real Text": {"TP": 0, "TN": 0, "FP": 0, "FN": 0},
+        "Generated Image + Truthful Text": {"TP": 0, "TN": 0, "FP": 0, "FN": 0},
         "Generated Image + Fake News Text": {"TP": 0, "TN": 0, "FP": 0, "FN": 0},
     }
 
@@ -67,11 +67,11 @@ def print_results(classified_images):
 
         # Determine the category
         if pristine == 1 and real_text == 1:
-            category = "Pristine Image + Real Text"
+            category = "Pristine Image + Truthful Text"
         elif pristine == 1 and fake_news_text == 1:
             category = "Pristine Image + Fake News Text"
         elif pristine == 0 and real_text == 1:
-            category = "Generated Image + Real Text"
+            category = "Generated Image + Truthful Text"
         elif pristine == 0 and fake_news_text == 1:
             category = "Generated Image + Fake News Text"
 
