@@ -1,5 +1,6 @@
 import collections
 import os
+import random
 import shutil
 import warnings
 import numpy as np
@@ -81,6 +82,12 @@ def print_statistics(classifier, train_dataset, val_dataset, train_counters, cla
     
 
 if __name__ == '__main__':
+
+    torch.backends.cudnn.deterministic = True
+    random.seed(42)
+    torch.manual_seed(42)
+    torch.cuda.manual_seed(42)
+    np.random.seed(42)
 
     # Call the function to empty the folder
     #empty_folder("LOGGER/Unimodal")

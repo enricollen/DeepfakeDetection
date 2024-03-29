@@ -1,5 +1,6 @@
 import collections
 import os
+import random
 import shutil
 import warnings
 import numpy as np
@@ -45,7 +46,7 @@ if MODAL_MODE == 0:
 elif MODAL_MODE == 1:
     EXPORTED_MODEL_NAME = 'best_multimodal_classifier.pth'
 
-def print_statistics(classifier, train_dataset, val_dataset, train_counters, val_counters, class_weights):
+def print_statistics(classifier, train_dataset, val_dataset, train_counters, val_counters): #class_weights
     print("\nMLP Architecture:")
     print(classifier)
 
@@ -55,7 +56,7 @@ def print_statistics(classifier, train_dataset, val_dataset, train_counters, val
     print("__TRAINING STATS__")
     
     print(train_counters)
-    print("Weights", class_weights)
+    #print("Weights", class_weights)
 
     print("__VALIDATION STATS__")
     print(val_counters)
@@ -124,13 +125,19 @@ class BalancedSampler(torch.utils.data.sampler.Sampler):
     
 if __name__ == '__main__':
 
+    torch.backends.cudnn.deterministic = True
+    random.seed(42)
+    torch.manual_seed(42)
+    torch.cuda.manual_seed(42)
+    np.random.seed(42)
+
     train_dataset = ImagesDatasetBiased(TRAIN_DATA_PATH, TRAIN_CSV_PATH, IMAGE_SIZE, set="train", modal_mode=MODAL_MODE)
     train_sampler = BalancedSampler(train_dataset)  
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, sampler=train_sampler, num_workers=NUM_WORKERS)
 
     val_dataset = ImagesDatasetBiased(VALIDATION_DATA_PATH, VAL_CSV_PATH, IMAGE_SIZE, set="validation", modal_mode=MODAL_MODE) 
-    #val_sampler = BalancedSampler(val_dataset)  
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS) #sampler=val_sampler
+    val_sampler = BalancedSampler(val_dataset)  
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, sampler=val_sampler, num_workers=NUM_WORKERS) #sampler=val_sampler
 
     # Hyperparameters dump
     hyperparameters_dump(str(len(train_dataset)), str(len(val_dataset)))
@@ -150,12 +157,12 @@ if __name__ == '__main__':
     # loss and optimizer
     train_counters = collections.Counter(train_dataset.labels)
     val_counters = collections.Counter(val_dataset.labels)
-    class_weights = train_counters[0] / train_counters[1]
-    loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([class_weights])).to(device)
+    #class_weights = train_counters[0] / train_counters[1]
+    loss_fn = torch.nn.BCEWithLogitsLoss().to(device) #pos_weight=torch.tensor([class_weights])
     optimizer = optim.Adam(classifier.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
     # Print statistics
-    print_statistics(classifier, train_dataset, val_dataset, train_counters, val_counters, class_weights)
+    print_statistics(classifier, train_dataset, val_dataset, train_counters, val_counters) #class_weights
 
     # Training loop
     starting_msg = "unimodal (image-only)" if MODAL_MODE == 0 else "multimodal (image+text)" if MODAL_MODE == 1 else "unknown"
