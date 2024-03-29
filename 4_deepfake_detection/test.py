@@ -1,5 +1,9 @@
+from collections import Counter
 import os
+import random
+from matplotlib import pyplot as plt
 import numpy as np
+from sklearn import metrics
 import torch
 import clip
 from torch.utils.data import DataLoader
@@ -7,7 +11,7 @@ from tqdm import tqdm
 from dotenv import load_dotenv
 from MLP import MLP  
 from images_dataset import ImagesDataset 
-from sklearn.metrics import f1_score
+from sklearn.metrics import auc, accuracy_score
 import pandas as pd
 
 load_dotenv()
@@ -38,7 +42,6 @@ def load_model(best_model_path):
     hidden_dims = HIDDEN_DIMS 
     output_dim = 1  # Binary classification
     classifier = MLP(input_dim, hidden_dims, output_dim).to(device)
-    best_model_path = '/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_2_multimodal/run7/best_multimodal_classifier.pth' #os.path.join(best_model_path, "best_unimodal_classifier.pth" if MODAL_MODE == 0 else "best_multimodal_classifier.pth")
     classifier.load_state_dict(torch.load(best_model_path))
     classifier.eval() 
 
@@ -100,8 +103,34 @@ def print_results(classified_images):
     report_df = pd.DataFrame(report_data, columns=['Combination', 'Total', 'Misclassified', 'False Positive %', 'False Negative %'])
     return report_df
 
+def save_roc_curves(correct_labels, preds, model_name):
+    plt.figure(1)
+    plt.plot([0, 1], [0, 1], 'k--')
+
+    fpr, tpr, th = metrics.roc_curve(correct_labels, preds)
+
+    model_auc = auc(fpr, tpr)
+
+
+    plt.plot(fpr, tpr, label="Model_"+ model_name + ' (area = {:.3f})'.format(model_auc))
+
+    plt.xlabel('False positive rate')
+    plt.ylabel('True positive rate')
+    plt.title('ROC curve')
+    plt.legend(loc='best')
+    plt.savefig("roc.jpg")
+    plt.clf()
+
 
 if __name__ == "__main__":
+
+    torch.backends.cudnn.deterministic = True
+    random.seed(42)
+    torch.manual_seed(42)
+    torch.cuda.manual_seed(42)
+    np.random.seed(42)
+
+    
     # Load model
     clip_model, classifier = load_model(BEST_MODEL_PATH)
 
@@ -110,6 +139,7 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)
 
     predictions = []
+    predictions_not_rounded = []
     ground_truths = []
     #misclassified_images = []
     classified_images = []
@@ -141,6 +171,7 @@ if __name__ == "__main__":
             labels = labels.cpu().numpy()
 
             predictions.extend(predicted_test)
+            predictions_not_rounded.extend(torch.sigmoid(outputs).cpu().numpy())
             ground_truths.extend(labels)
             #misclassified_images.extend([(image_name, label) for image_name, label, pred in zip(image_names, labels, predicted_test) if pred != label])
 
@@ -150,11 +181,13 @@ if __name__ == "__main__":
 
     # Performance Eval
     predictions = np.array(predictions)
+    predictions_not_rounded = np.array(predictions_not_rounded)
     ground_truths = np.array(ground_truths)
 
     accuracy = np.mean(predictions == ground_truths)
-    f1 = f1_score(ground_truths, predictions, average='binary')
-    print(f"\nAccuracy: {accuracy:.4f} | F1 Score: {f1:.4f}")
+    accuracy = accuracy_score(ground_truths, predictions)
+    save_roc_curves(ground_truths,predictions_not_rounded, "biased_multimodal")
+    print(f"\nAccuracy: {accuracy:.4f}")
 
     report_df = print_results(classified_images)
     print(report_df)
