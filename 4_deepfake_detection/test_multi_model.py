@@ -11,7 +11,8 @@ from tqdm import tqdm
 from dotenv import load_dotenv
 from MLP import MLP  
 from images_dataset import ImagesDataset 
-from sklearn.metrics import auc, f1_score, accuracy_score
+from sklearn.metrics import auc, accuracy_score
+from sklearn.metrics import roc_curve
 import pandas as pd
 
 load_dotenv()
@@ -103,21 +104,38 @@ def print_results(classified_images):
     report_df = pd.DataFrame(report_data, columns=['Combination', 'Total', 'Misclassified', 'False Positive %', 'False Negative %'])
     return report_df
 
-def save_all_roc_curves(correct_labels_list, preds_list, model_names):
+def save_all_roc_curves(correct_labels_list, preds_list, model_names, eers):
     plt.figure(figsize=(10, 8))
     plt.plot([0, 1], [0, 1], 'k--')
 
-    for correct_labels, preds, model_name in zip(correct_labels_list, preds_list, model_names):
-        fpr, tpr, _ = metrics.roc_curve(correct_labels, preds)
+    # Define a list of colors for the threshold points
+    colors = ['pink', 'purple', 'red']
+
+    for (correct_labels, preds, model_name, eer, color) in zip(correct_labels_list, preds_list, model_names, eers, colors):
+        fpr, tpr, thresholds = roc_curve(correct_labels, preds)
         model_auc = auc(fpr, tpr)
-        plt.plot(fpr, tpr, label=f"{model_name} (AUC = {model_auc:.3f})")
+        plt.plot(fpr, tpr, label=f"{model_name} (AUC = {model_auc:.3f}) (EER = {eer:.4f})")
+        
+        #find the threshold closest to 0.5
+        closest_threshold_index = np.argmin(np.abs(thresholds - 0.5))
+        plt.plot(fpr[closest_threshold_index], tpr[closest_threshold_index], marker='o', color=color, label=f'Threshold 0.5 for {model_name}')
 
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
     plt.title('ROC Curves Comparison')
-    plt.legend(loc='best')
-    plt.savefig("combined_roc.jpg")
-    plt.clf()  # Clear the figure for future plots
+    plt.legend(loc='best', fontsize='small')
+    plt.savefig("combined_roc_with_threshold_colored.jpg")
+    plt.clf()
+
+
+def calculate_eer(y_true, y_scores):
+    fpr, tpr, thresholds = roc_curve(y_true, y_scores)
+    fnr = 1 - tpr
+    # Find the closest point to the ideal EER point (where fnr = fpr)
+    distances = abs(fpr - fnr)
+    min_distance_idx = np.argmin(distances)
+    eer = (fpr[min_distance_idx] + fnr[min_distance_idx]) / 2
+    return eer, thresholds[min_distance_idx]
 
 
 def evaluate_model(model_path, modal_mode):
@@ -163,7 +181,7 @@ def evaluate_model(model_path, modal_mode):
     report_df = print_results(classified_images)
     print(report_df)
 
-    return ground_truths, predictions_not_rounded, f"{model_path.split('/')[-2]}_modal_{modal_mode}"
+    return ground_truths, predictions_not_rounded, f"{model_path.split('/')[-3]}"
 
 
 if __name__ == "__main__":
@@ -191,4 +209,10 @@ for model_path, modal_mode in model_configs:
     preds_list.append(predictions_not_rounded)
     model_names.append(model_name)
 
-save_all_roc_curves(correct_labels_list, preds_list, model_names)
+eers = []
+
+for ground_truths, predictions_not_rounded in zip(correct_labels_list, preds_list):
+    eer, threshold = calculate_eer(ground_truths, predictions_not_rounded)
+    eers.append(eer)
+
+save_all_roc_curves(correct_labels_list, preds_list, model_names, eers)

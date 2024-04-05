@@ -11,7 +11,7 @@ from tqdm import tqdm
 from dotenv import load_dotenv
 from MLP import MLP  
 from images_dataset import ImagesDataset 
-from sklearn.metrics import auc, accuracy_score
+from sklearn.metrics import auc, accuracy_score, roc_curve
 import pandas as pd
 
 load_dotenv()
@@ -104,31 +104,37 @@ def print_results(classified_images):
     return report_df
 
 def save_roc_curves(correct_labels, preds, model_name):
-    plt.figure(1)
-    plt.plot([0, 1], [0, 1], 'k--')
+    fpr, tpr, thresholds = roc_curve(correct_labels, preds)
+    roc_auc = auc(fpr, tpr)
 
-    fpr, tpr, th = metrics.roc_curve(correct_labels, preds)
+    plt.figure(figsize=(8, 6))
+    plt.plot([0, 1], [0, 1], 'k--', label='No Skill')
+    plt.plot(fpr, tpr, label=f"{model_name} (AUC = {roc_auc:.3f})")
 
-    model_auc = auc(fpr, tpr)
+    # Find the closest threshold to 0.5
+    closest_threshold_index = np.argmin(np.abs(thresholds - 0.5))
+    closest_fpr = fpr[closest_threshold_index]
+    closest_tpr = tpr[closest_threshold_index]
 
+    # Highlight the 0.5 threshold point
+    plt.plot(closest_fpr, closest_tpr, 'ro', label='Threshold 0.5')
 
-    plt.plot(fpr, tpr, label="Model_"+ model_name + ' (area = {:.3f})'.format(model_auc))
-
-    plt.xlabel('False positive rate')
-    plt.ylabel('True positive rate')
-    plt.title('ROC curve')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('ROC Curve')
     plt.legend(loc='best')
-    plt.savefig("roc.jpg")
+
+    plt.savefig("roc_with_threshold.jpg")
     plt.clf()
 
 
 if __name__ == "__main__":
 
     torch.backends.cudnn.deterministic = True
-    random.seed(42)
-    torch.manual_seed(42)
-    torch.cuda.manual_seed(42)
-    np.random.seed(42)
+    random.seed(37)
+    torch.manual_seed(37)
+    torch.cuda.manual_seed(37)
+    np.random.seed(37)
 
     
     # Load model
