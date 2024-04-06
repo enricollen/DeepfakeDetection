@@ -82,17 +82,17 @@ class BalancedSampler(torch.utils.data.sampler.Sampler):
     def __init__(self, dataset):
         self.dataset = dataset
         self.indices = list(range(len(dataset)))
-        self.type_to_indices = {}
+        self.label_to_indices = {}
         for i in range(len(dataset)):
-            type = dataset.type[i]
-            if type not in self.type_to_indices:
-                self.type_to_indices[type] = []
-            self.type_to_indices[type].append(i)
+            label = dataset.labels[i]
+            if label not in self.label_to_indices:
+                self.label_to_indices[label] = []
+            self.label_to_indices[label].append(i)
 
-        self.minority_class = min(self.type_to_indices, key=lambda x: len(self.type_to_indices[x]))
-        self.majority_class = next(type for type in self.type_to_indices if type != self.minority_class)
-        self.minority_indices = self.type_to_indices[self.minority_class]
-        self.majority_indices = self.type_to_indices[self.majority_class]
+        self.minority_class = min(self.label_to_indices, key=lambda x: len(self.label_to_indices[x]))
+        self.majority_class = next(label for label in self.label_to_indices if label != self.minority_class)
+        self.minority_indices = self.label_to_indices[self.minority_class]
+        self.majority_indices = self.label_to_indices[self.majority_class]
 
     def __iter__(self):
         np.random.shuffle(self.majority_indices)
@@ -137,7 +137,7 @@ if __name__ == '__main__':
 
     val_dataset = ImagesDatasetBiased(VALIDATION_DATA_PATH, VAL_CSV_PATH, IMAGE_SIZE, set="validation", modal_mode=MODAL_MODE) 
     val_sampler = BalancedSampler(val_dataset)  
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, sampler=val_sampler, num_workers=NUM_WORKERS) #sampler=val_sampler
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, num_workers=NUM_WORKERS) #sampler=val_sampler
 
     # Hyperparameters dump
     hyperparameters_dump(str(len(train_dataset)), str(len(val_dataset)))
@@ -157,7 +157,7 @@ if __name__ == '__main__':
     # loss and optimizer
     train_counters = collections.Counter(train_dataset.labels)
     val_counters = collections.Counter(val_dataset.labels)
-    #class_weights = train_counters[0] / train_counters[1]
+    class_weights = train_counters[0] / train_counters[1]
     loss_fn = torch.nn.BCEWithLogitsLoss().to(device) #pos_weight=torch.tensor([class_weights])
     optimizer = optim.Adam(classifier.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
@@ -186,7 +186,7 @@ if __name__ == '__main__':
         progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch+1}/{NUM_EPOCHS}")
 
         for batch_index, (images, captions, labels, types) in progress_bar:
-            #batch_type_counts = collections.Counter(types.numpy())
+            #batch_type_counts = collections.Counter(labels.numpy())
             #print("Batch Type Counts:", batch_type_counts)
 
             images = np.transpose(images, (0, 3, 1, 2))
@@ -204,7 +204,11 @@ if __name__ == '__main__':
                 elif MODAL_MODE == 1:                    
                     text_features = clip_model.encode_text(captions)
                     text_features /= text_features.norm(dim=-1, keepdim=True)
+                    #for i in text_features:
+                    #    print(i)
                     features = torch.cat((image_features, text_features), dim=1)
+                    #print(features)
+                    #print(features.shape)
                 else:
                     print("ERROR: unknown modal mode")
                     exit()
@@ -264,7 +268,7 @@ if __name__ == '__main__':
                 labels = labels.float().unsqueeze(1).to(device)
                 if MODAL_MODE == 0:
                     features = image_features
-                elif MODAL_MODE == 1:                    
+                elif MODAL_MODE == 1:                
                     text_features = clip_model.encode_text(captions)
                     text_features /= text_features.norm(dim=-1, keepdim=True)
                     features = torch.cat((image_features, text_features), dim=1)
