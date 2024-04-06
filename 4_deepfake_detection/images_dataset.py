@@ -60,10 +60,16 @@ class ImagesDataset(Dataset):
         ])
     
     def __getitem__(self, idx):
-        image_name = self.df.iloc[idx]['id']
-        label = self.labels[idx]  
+        label = self.labels[idx] 
+        if self.set != "test":
+            if label == 0:
+                image_name = self.df.iloc[idx]['id']
+            else:
+                image_name = self.df.iloc[idx]['fake_id']
+        else:
+            image_name = self.df.iloc[idx]['id']
+         
         image_path = os.path.join(self.data_path, image_name + '.jpg')
-
         image = cv2.imread(image_path)
         if image is None:
             return self.__getitem__((idx + 1) % len(self))  # skip sample and move to the next one
