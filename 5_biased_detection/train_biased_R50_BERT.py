@@ -1,5 +1,6 @@
 import collections
 import os
+import random
 import shutil
 import warnings
 import numpy as np
@@ -84,17 +85,17 @@ class BalancedSampler(torch.utils.data.sampler.Sampler):
     def __init__(self, dataset):
         self.dataset = dataset
         self.indices = list(range(len(dataset)))
-        self.type_to_indices = {}
+        self.label_to_indices = {}
         for i in range(len(dataset)):
-            type = dataset.type[i]
-            if type not in self.type_to_indices:
-                self.type_to_indices[type] = []
-            self.type_to_indices[type].append(i)
+            label = dataset.labels[i]
+            if label not in self.label_to_indices:
+                self.label_to_indices[label] = []
+            self.label_to_indices[label].append(i)
 
-        self.minority_class = min(self.type_to_indices, key=lambda x: len(self.type_to_indices[x]))
-        self.majority_class = next(type for type in self.type_to_indices if type != self.minority_class)
-        self.minority_indices = self.type_to_indices[self.minority_class]
-        self.majority_indices = self.type_to_indices[self.majority_class]
+        self.minority_class = min(self.label_to_indices, key=lambda x: len(self.label_to_indices[x]))
+        self.majority_class = next(label for label in self.label_to_indices if label != self.minority_class)
+        self.minority_indices = self.label_to_indices[self.minority_class]
+        self.majority_indices = self.label_to_indices[self.majority_class]
 
     def __iter__(self):
         np.random.shuffle(self.majority_indices)
@@ -124,24 +125,14 @@ class BalancedSampler(torch.utils.data.sampler.Sampler):
 
     def __len__(self):
         return len(self.dataset)
-    
-def custom_collate_fn(batch):
-    images, input_ids, attention_masks, labels, types = zip(*batch)
-
-    # Stack images as before
-    images = torch.stack(images)
-
-    # Since input_ids and attention_masks are already properly padded and have the same length, 
-    # you can directly stack them without additional padding here
-    input_ids = torch.stack(input_ids)
-    attention_masks = torch.stack(attention_masks)
-
-    labels = torch.tensor(labels, dtype=torch.float32)
-    types = torch.tensor(types)
-
-    return images, input_ids, attention_masks, labels, types
 
 if __name__ == '__main__':
+
+    torch.backends.cudnn.deterministic = True
+    random.seed(42)
+    torch.manual_seed(42)
+    torch.cuda.manual_seed(42)
+    np.random.seed(42)
 
     resnet50 = models.resnet50(pretrained=True)
     # Remove the final layer to get the features instead of predictions
@@ -179,7 +170,7 @@ if __name__ == '__main__':
     # loss and optimizer
     train_counters = collections.Counter(train_dataset.labels)
     #class_weights = train_counters[0] / train_counters[1]
-    loss_fn = torch.nn.BCEWithLogitsLoss().to(device) #pos_weight=torch.tensor([class_weights])
+    loss_fn = torch.nn.BCEWithLogitsLoss() #pos_weight=torch.tensor([class_weights])
     optimizer = optim.Adam(classifier.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
     # Print statistics
@@ -207,36 +198,51 @@ if __name__ == '__main__':
         progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch+1}/{NUM_EPOCHS}")
 
         for batch_index, (images, input_ids, attention_masks, labels, types) in progress_bar:
+            #batch_type_counts = collections.Counter(labels.numpy())
+            #print("Batch Type Counts:", batch_type_counts)
             images = images.to(device)
-            labels = labels.float().unsqueeze(1).to(device)
-
-            if MODAL_MODE == 1 and input_ids is not None and attention_masks is not None:
-                #print("input_ids shape:", input_ids.shape)
-                #print("attention_masks shape:", attention_masks.shape)
-                input_ids = input_ids.to(device).squeeze(1)
-                attention_masks = attention_masks.to(device).squeeze(1)
-                text_outputs = bert_model(input_ids=input_ids, attention_mask=attention_masks)
-                text_features = text_outputs.pooler_output
-                text_features /= text_features.norm(dim=-1, keepdim=True)
-                    
+            labels = labels.float().unsqueeze(1)
 
             with torch.no_grad():
+                if MODAL_MODE == 1 and input_ids is not None and attention_masks is not None:
+                    #print("input_ids shape:", input_ids.shape)
+                    #print("attention_masks shape:", attention_masks.shape)
+                    input_ids = input_ids.to(device).squeeze(1)
+                    attention_masks = attention_masks.to(device).squeeze(1)
+                    
+                    text_outputs = bert_model(input_ids=input_ids, attention_mask=attention_masks)
+                    input_ids = input_ids.cpu()
+                    attention_masks = attention_masks.cpu()
+                    #text_features = text_outputs.cpu()
+                    text_features = text_outputs.pooler_output
+                    text_features = text_features.cpu()
+                    #text_features /= text_features.norm(dim=-1, keepdim=True)
+                        
                 image_features = resnet50(images)
-                image_features /= image_features.norm(dim=-1, keepdim=True)
-                image_features = torch.flatten(image_features, 1)
-                #print(image_features)
+                image_features = image_features.cpu()
+                #image_features /= image_features.norm(dim=-1, keepdim=True)
+                image_features = torch.squeeze(image_features)
+                #print(image_features.shape)
 
                 if MODAL_MODE == 0:
                     features = image_features
                 elif MODAL_MODE == 1:
+                    #for i in text_features:
+                    #    print(i)
                     features = torch.cat((image_features, text_features), dim=1)
+                    features = features.float()
+                    #features = torch.nn.functional.normalize(features)
+                    #print(features)
+                    #print(features.shape)
                 else:
                     print("ERROR: unknown modal mode")
                     exit()
 
-            optimizer.zero_grad()
+            features = features.to(device)
             outputs = classifier(features.float())
+            outputs = outputs.cpu()
             loss = loss_fn(outputs, labels)
+            optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
@@ -267,46 +273,56 @@ if __name__ == '__main__':
         classified_as_label_1_val = 0
         progress_bar = tqdm(enumerate(val_loader), total=len(val_loader), desc=f"Epoch {epoch+1}/{NUM_EPOCHS} (Validation)")
 
-        for batch_index, (images, captions, labels, types) in progress_bar:
+        for batch_index, (images, input_ids, attention_masks, labels, types) in progress_bar:
             images = images.to(device)
             labels = labels.float().unsqueeze(1).to(device)
 
-            if MODAL_MODE == 1 and captions["input_ids"] is not None:
-                input_ids = captions["input_ids"].to(device)
-                attention_mask = captions["attention_mask"].to(device)
-                with torch.no_grad():
-                    text_outputs = bert_model(input_ids=input_ids, attention_mask=attention_mask)
-                    text_features = text_outputs.pooler_output
-
             with torch.no_grad():
+                if MODAL_MODE == 1 and input_ids is not None and attention_masks is not None:
+                    input_ids = input_ids.to(device).squeeze(1)
+                    attention_masks = attention_masks.to(device).squeeze(1)
+                    
+                    text_outputs = bert_model(input_ids=input_ids, attention_mask=attention_masks)
+                    input_ids = input_ids.cpu()
+                    attention_masks = attention_masks.cpu()
+                    #text_features = text_outputs.cpu()
+                    text_features = text_outputs.pooler_output
+                    text_features = text_features.cpu()
+                    #text_features /= text_features.norm(dim=-1, keepdim=True)
+
+                
                 image_features = resnet50(images)
-                image_features /= image_features.norm(dim=-1, keepdim=True)
-                image_features = torch.flatten(image_features, 1)
+                image_features = image_features.cpu()
+                #image_features /= image_features.norm(dim=-1, keepdim=True)
+                image_features = torch.squeeze(image_features)
 
                 if MODAL_MODE == 0:
                     features = image_features
-                elif MODAL_MODE == 1 and captions["input_ids"] is not None:
+                elif MODAL_MODE == 1:
                     features = torch.cat((image_features, text_features), dim=1)
+                    features = features.float()
+                    #features = torch.nn.functional.normalize(features)
                 else:
                     print("ERROR: unknown modal mode")
                     exit()
                 
-                features = torch.nn.functional.normalize(features)
-                outputs = classifier(features.float())
+                features = features.float().to(device)
+                outputs = classifier(features)
                 loss = loss_fn(outputs, labels)
                 val_loss += loss.item()
                 
-                # Compute validation accuracy
+                # validation accuracy
                 predicted_val = torch.round(torch.sigmoid(outputs))
                 correct_val += (predicted_val == labels).sum().item()
                 total_val += labels.size(0)
+
+                val_loss += loss.item()
+                progress_bar.set_postfix(val_loss=val_loss / (batch_index + 1), val_accuracy=correct_val / total_val)
                 
-                # Count samples classified as label 0 and label 1
+                # samples classified as label 0 and label 1
                 classified_as_label_0_val += torch.sum(predicted_val == 0).item()
                 classified_as_label_1_val += torch.sum(predicted_val == 1).item()
             
-            progress_bar.set_postfix(val_loss=val_loss / (batch_index + 1), val_accuracy=correct_val / total_val)
-
         val_loss /= len(val_loader)
         val_accuracy = correct_val / total_val
 

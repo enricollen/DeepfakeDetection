@@ -27,15 +27,29 @@ class ImagesDataset(Dataset):
         self.labels = self.df['class'].tolist()
         self.type = self.df['type'].tolist()
 
+        self.normalize = Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
         if self.mode==1: # multimodal image + text
             self.captions = self.df['original_caption'].tolist()
+            self.tokenized_captions = self.tokenize_captions(self.captions)
 
         if self.set=="train":
             self.transform = self.create_train_transforms(self.size)
         else:
             self.transform = self.create_val_test_transform(self.size)
         
-
+    def tokenize_captions(self, captions):
+        tokenized_captions = [
+            self.tokenizer.encode_plus(
+                caption,
+                max_length=max_seq_length,
+                padding='max_length',
+                truncation=True,
+                return_tensors="pt"
+            ) for caption in captions
+        ]
+        return tokenized_captions
+    
     def __len__(self):
         return len(self.df)
     
@@ -84,21 +98,15 @@ class ImagesDataset(Dataset):
             image = self.transform(image=image)['image']
             image = np.transpose(image, (2, 0, 1)).astype(np.float32)
             image = torch.tensor(image) / 255.0
-            image = Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])(image)
+            image = self.normalize(image)
 
-            if self.mode == 0:  # unimodal, prepare dummy or empty caption data
-                caption = {"input_ids": None, "attention_mask": None}
-            else:  # multimodal, tokenize caption
-                caption_data = self.tokenizer.encode_plus(
-                self.captions[idx],
-                max_length=max_seq_length,
-                padding='max_length',
-                truncation=True,
-                return_tensors="pt"
-            )
-            # No need to squeeze here, as you will handle the batch dimension in your custom collate function
-            caption_input_ids = caption_data['input_ids']
-            attention_mask = caption_data['attention_mask']
+            if self.mode == 1:
+                # Use pre-tokenized captions
+                caption_data = self.tokenized_captions[idx]
+                caption_input_ids = caption_data['input_ids'].squeeze(0)  
+                attention_mask = caption_data['attention_mask'].squeeze(0)
+            else:
+                caption_input_ids, attention_mask = None, None
 
             if self.set == "test":
                 return image_name, image, caption_input_ids, attention_mask, label
