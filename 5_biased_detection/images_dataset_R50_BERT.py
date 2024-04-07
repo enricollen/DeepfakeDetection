@@ -25,7 +25,7 @@ class ImagesDataset(Dataset):
         self.tokenizer = tokenizer
         self.df = pd.read_csv(csv_path)
         self.labels = self.df['class'].tolist()
-        self.type = self.df['type'].tolist()
+        #self.type = self.df['type'].tolist()
 
         self.normalize = Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
@@ -80,7 +80,7 @@ class ImagesDataset(Dataset):
         ])
     
     def __getitem__(self, idx):
-        type = self.type[idx]
+        #type = self.type[idx]
         label = self.labels[idx]
         if self.set != "test":
             if label == 0:
@@ -111,7 +111,7 @@ class ImagesDataset(Dataset):
             if self.set == "test":
                 return image_name, image, caption_input_ids, attention_mask, label
             else:
-                return image, caption_input_ids, attention_mask, label, type
+                return image, caption_input_ids, attention_mask, label
         else:
             # If the image is not found, try the next index
             return self.__getitem__((idx + 1) % len(self))
