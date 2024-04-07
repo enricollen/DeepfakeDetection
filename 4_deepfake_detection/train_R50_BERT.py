@@ -1,5 +1,6 @@
 import collections
 import os
+import random
 import shutil
 import warnings
 import numpy as np
@@ -31,37 +32,38 @@ BATCH_SIZE = int(os.getenv('BATCH_SIZE'))
 PATIENCE = int(os.getenv('PATIENCE'))
 NUM_WORKERS = int(os.getenv('NUM_WORKERS'))
 HIDDEN_DIMS = eval(os.getenv('HIDDEN_DIMS'))
-DATA_PATH = os.getenv('DATA_PATH')
+TRAIN_DATA_PATH = os.getenv('TRAIN_DATA_PATH')
+VALIDATION_DATA_PATH = os.getenv('VALIDATION_DATA_PATH')
 TRAIN_CSV_PATH = os.getenv('TRAIN_CSV_PATH')
 VAL_CSV_PATH = os.getenv('VAL_CSV_PATH')
 SAVE_PATH = os.getenv('SAVE_PATH')
 SAVE_MODEL = bool(os.getenv('SAVE_MODEL'))
 MODAL_MODE = int(os.getenv('MODAL_MODE'))
+HYPERPARAMETERS_DUMP_PATH = os.getenv('LOG_DIR')
+LOG_DIR = os.getenv('LOG_DIR')
 
 if MODAL_MODE == 0:
     EXPORTED_MODEL_NAME = 'best_unimodal_classifier.pth'
-    LOG_DIR = 'LOGGER/Unimodal/'
 elif MODAL_MODE == 1:
     EXPORTED_MODEL_NAME = 'best_multimodal_classifier.pth'
-    LOG_DIR = 'LOGGER/Multimodal/'  
 
-def empty_folder(folder_path):
-    if os.path.exists(folder_path):
-        for filename in os.listdir(folder_path):
-            file_path = os.path.join(folder_path, filename)
-            try:
-                if os.path.isfile(file_path):
-                    os.unlink(file_path)
-                elif os.path.isdir(file_path):
-                    shutil.rmtree(file_path)
-            except Exception as e:
-                print(f"Failed to delete {file_path}. Reason: {e}")
-    else:
-        print(f"The folder {folder_path} does not exist.")
+def hyperparameters_dump(len_train, len_validation):
+    if not os.path.exists(HYPERPARAMETERS_DUMP_PATH):
+        os.makedirs(HYPERPARAMETERS_DUMP_PATH)
+        
+    with open(HYPERPARAMETERS_DUMP_PATH+"/params.txt", "w") as f:
+        f.write("NUM_EPOCHS=" + str(NUM_EPOCHS) + "\n")
+        f.write("LEARNING_RATE=" + str(LEARNING_RATE) + "\n")
+        f.write("WEIGHT_DECAY=" + str(WEIGHT_DECAY) + "\n")
+        f.write("BATCH_SIZE=" + str(BATCH_SIZE) + "\n")
+        f.write("PATIENCE=" + str(PATIENCE) + "\n")
+        f.write("NUM_WORKERS=" + str(NUM_WORKERS) + "\n")
+        f.write("HIDDEN_DIMS=" + str(HIDDEN_DIMS) + "\n")
+        f.write("----------------------------------\n")
+        f.write("Train samples = " + len_train + "\n")
+        f.write("Validation samples = " + len_validation + "\n")
 
-def print_statistics(classifier, train_dataset, val_dataset, train_counters, class_weights):
-    #print("CLIP Architecture:")
-    #print(clip_model)
+def print_statistics(classifier, train_dataset, val_dataset, train_counters):
     print("\nMLP Architecture:")
     print(classifier)
 
@@ -71,15 +73,19 @@ def print_statistics(classifier, train_dataset, val_dataset, train_counters, cla
     print("__TRAINING STATS__")
     
     print(train_counters)
-    print("Weights", class_weights)
 
     print("__VALIDATION STATS__")
     val_counters = collections.Counter(val_dataset.labels)
     print(val_counters)
     print("___________________\n\n")
-    
 
 if __name__ == '__main__':
+
+    torch.backends.cudnn.deterministic = True
+    random.seed(42)
+    torch.manual_seed(42)
+    torch.cuda.manual_seed(42)
+    np.random.seed(42)
 
     resnet50 = models.resnet50(pretrained=True)
     # Remove the final layer to get the features instead of predictions
@@ -90,11 +96,14 @@ if __name__ == '__main__':
     bert_tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
     bert_model = bert_model.to(device)
 
-    train_dataset = ImagesDataset(DATA_PATH, TRAIN_CSV_PATH, IMAGE_SIZE, bert_tokenizer, set="train", modal_mode=MODAL_MODE) 
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_WORKERS)
+    train_dataset = ImagesDataset(TRAIN_DATA_PATH, TRAIN_CSV_PATH, IMAGE_SIZE, bert_tokenizer, set="train", modal_mode=MODAL_MODE) 
+    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, num_workers=NUM_WORKERS) 
 
-    val_dataset = ImagesDataset(DATA_PATH, VAL_CSV_PATH, IMAGE_SIZE, bert_tokenizer, set="validation", modal_mode=MODAL_MODE) 
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, num_workers=NUM_WORKERS)
+    val_dataset = ImagesDataset(VALIDATION_DATA_PATH, VAL_CSV_PATH, IMAGE_SIZE, bert_tokenizer, set="validation", modal_mode=MODAL_MODE) 
+    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)
+
+    # Hyperparameters dump
+    hyperparameters_dump(str(len(train_dataset)), str(len(val_dataset)))
 
     # MLP
     if MODAL_MODE == 0:
@@ -108,12 +117,11 @@ if __name__ == '__main__':
 
     # loss and optimizer
     train_counters = collections.Counter(train_dataset.labels)
-    class_weights = train_counters[0] / train_counters[1]
-    loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([class_weights])).to(device)
+    loss_fn = torch.nn.BCEWithLogitsLoss() 
     optimizer = optim.Adam(classifier.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
     # Print statistics
-    print_statistics(classifier, train_dataset, val_dataset, train_counters, class_weights)
+    print_statistics(classifier, train_dataset, val_dataset, train_counters)
 
     # Training loop
     starting_msg = "unimodal (image-only)" if MODAL_MODE == 0 else "multimodal (image+text)" if MODAL_MODE == 1 else "unknown"
@@ -136,33 +144,42 @@ if __name__ == '__main__':
         classified_as_label_1_train = 0
         progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch+1}/{NUM_EPOCHS}")
 
-        for batch_index, (images, captions, labels) in progress_bar:
-            images = np.transpose(images, (0, 3, 1, 2))
+        for batch_index, (images, input_ids, attention_masks, labels) in progress_bar:
+            
             images = images.to(device)
-            if MODAL_MODE == 1: 
-                captions = torch.squeeze(captions, dim=1)  # Remove the singleton dimension
-                captions = captions.to(device)
+            labels = labels.float().unsqueeze(1)
 
             with torch.no_grad():
+                if MODAL_MODE == 1 and input_ids is not None and attention_masks is not None:
+                    input_ids = input_ids.to(device).squeeze(1)
+                    attention_masks = attention_masks.to(device).squeeze(1)
+                    
+                    text_outputs = bert_model(input_ids=input_ids, attention_mask=attention_masks)
+                    input_ids = input_ids.cpu()
+                    attention_masks = attention_masks.cpu()
+                    text_features = text_outputs.pooler_output
+                    text_features = text_features.cpu()
+                    #text_features /= text_features.norm(dim=-1, keepdim=True)
+                        
                 image_features = resnet50(images)
-                image_features = torch.flatten(image_features, 1) 
-                labels = labels.float().unsqueeze(1).to(device)
+                image_features = image_features.cpu()
+                #image_features /= image_features.norm(dim=-1, keepdim=True)
+                image_features = torch.squeeze(image_features)
+
                 if MODAL_MODE == 0:
                     features = image_features
-                elif MODAL_MODE == 1:                    
-                    inputs = bert_tokenizer(list(captions), return_tensors="pt", padding=True, truncation=True, max_length=128)
-                    inputs = {key: val.to(device) for key, val in inputs.items()}
-                    with torch.no_grad():
-                        outputs = bert_model(**inputs)
-                    text_features = outputs.pooler_output
+                elif MODAL_MODE == 1:
                     features = torch.cat((image_features, text_features), dim=1)
+                    features = features.float()
                 else:
                     print("ERROR: unknown modal mode")
                     exit()
 
-            optimizer.zero_grad()
+            features = features.to(device)
             outputs = classifier(features.float())
+            outputs = outputs.cpu()
             loss = loss_fn(outputs, labels)
+            optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
@@ -177,24 +194,14 @@ if __name__ == '__main__':
             # samples classified as label 0 and label 1
             classified_as_label_0_train += torch.sum(predicted_train == 0).item()
             classified_as_label_1_train += torch.sum(predicted_train == 1).item()
-
+            
             ### LOGGER ### 
-            #log into Tensorboard for generating learning graphs, display batch images and show FC weights distribution
-            if batch_index == 0:  # Only visualize 8 images from first batch 
-                LOGGER.log_image('Batch Images', images) 
-
-            if batch_index % 30 == 0:
+            if batch_index % 50 == 0:
                 train_batch_accuracy = correct_train / total_train
                 LOGGER.log_scalar('Train/Accuracy', train_batch_accuracy, epoch * len(train_loader) + batch_index)
                 LOGGER.log_scalar('Train/Loss', loss.item(), epoch * len(train_loader) + batch_index)
-                #LOGGER.log_histogram('fc', classifier)                        
-            
-        if epoch==15:
-            embeddings=features.cpu().numpy()
-            metadata = labels.cpu().numpy()
-            LOGGER.log_embeddings(embeddings=embeddings, metadata=metadata, step=epoch, tag='Train Embeddings')
-        ### END LOGGER ###
-                
+            ### END LOGGER ###
+
         train_loss /= len(train_loader)
         train_accuracy = correct_train / total_train
         
@@ -210,54 +217,60 @@ if __name__ == '__main__':
         classified_as_label_1_val = 0
         progress_bar = tqdm(enumerate(val_loader), total=len(val_loader), desc=f"Epoch {epoch+1}/{NUM_EPOCHS} (Validation)")
 
-        for batch_index, (images, captions, labels) in progress_bar:
-            images = np.transpose(images, (0, 3, 1, 2))
+        for batch_index, (images, input_ids, attention_masks, labels) in progress_bar:
             images = images.to(device)
-            if MODAL_MODE == 1: 
-                captions = torch.squeeze(captions, dim=1) 
-                captions = captions.to(device)
+            labels = labels.float().unsqueeze(1).to(device)
 
             with torch.no_grad():
+                if MODAL_MODE == 1 and input_ids is not None and attention_masks is not None:
+                    input_ids = input_ids.to(device).squeeze(1)
+                    attention_masks = attention_masks.to(device).squeeze(1)
+                    
+                    text_outputs = bert_model(input_ids=input_ids, attention_mask=attention_masks)
+                    input_ids = input_ids.cpu()
+                    attention_masks = attention_masks.cpu()
+                    text_features = text_outputs.pooler_output
+                    text_features = text_features.cpu()
+                    #text_features /= text_features.norm(dim=-1, keepdim=True)
+
+                
                 image_features = resnet50(images)
-                image_features = torch.flatten(image_features, 1) 
-                labels = labels.float().unsqueeze(1).to(device)
+                image_features = image_features.cpu()
+                #image_features /= image_features.norm(dim=-1, keepdim=True)
+                image_features = torch.squeeze(image_features)
+
                 if MODAL_MODE == 0:
                     features = image_features
-                elif MODAL_MODE == 1:                    
-                    inputs = bert_tokenizer(list(captions), return_tensors="pt", padding=True, truncation=True, max_length=128)
-                    inputs = {key: val.to(device) for key, val in inputs.items()}
-                    with torch.no_grad():
-                        outputs = bert_model(**inputs)
-                    text_features = outputs.pooler_output
+                elif MODAL_MODE == 1:
                     features = torch.cat((image_features, text_features), dim=1)
+                    features = features.float()
                 else:
                     print("ERROR: unknown modal mode")
                     exit()
                 
-                features = torch.nn.functional.normalize(features)
-                outputs = classifier(features.float())
+                features = features.float().to(device)
+                outputs = classifier(features)
                 loss = loss_fn(outputs, labels)
                 val_loss += loss.item()
                 
-                # Compute validation accuracy
+                # validation accuracy
                 predicted_val = torch.round(torch.sigmoid(outputs))
                 correct_val += (predicted_val == labels).sum().item()
                 total_val += labels.size(0)
+
+                val_loss += loss.item()
+                progress_bar.set_postfix(val_loss=val_loss / (batch_index + 1), val_accuracy=correct_val / total_val)
                 
-                # Count samples classified as label 0 and label 1
+                # samples classified as label 0 and label 1
                 classified_as_label_0_val += torch.sum(predicted_val == 0).item()
                 classified_as_label_1_val += torch.sum(predicted_val == 1).item()
 
                 ### LOGGER ### 
-
-                if batch_index % 30 == 0:
+                if batch_index % 50 == 0:
                     val_batch_accuracy = correct_val / total_val
                     LOGGER.log_scalar('Validation/Accuracy', val_batch_accuracy, epoch * len(val_loader) + batch_index)
                     LOGGER.log_scalar('Validation/Loss', loss.item(), epoch * len(val_loader) + batch_index)
-
                 ### END LOGGER ###
-            
-            progress_bar.set_postfix(val_loss=val_loss / (batch_index + 1), val_accuracy=correct_val / total_val)
 
         val_loss /= len(val_loader)
         val_accuracy = correct_val / total_val
@@ -284,10 +297,11 @@ if __name__ == '__main__':
                     os.makedirs(SAVE_PATH)
                 model_filename = os.path.join(SAVE_PATH, EXPORTED_MODEL_NAME)
                 torch.save(classifier.state_dict(), model_filename)
+                print("New best model saved")
 
         # Early stopping
         if patience_counter >= PATIENCE:
             print("Early stopping.")
             break
-
+    
     LOGGER.close()
