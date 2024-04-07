@@ -106,7 +106,8 @@ class ImagesDataset(Dataset):
                 caption_input_ids = caption_data['input_ids'].squeeze(0)  
                 attention_mask = caption_data['attention_mask'].squeeze(0)
             else:
-                caption_input_ids, attention_mask = None, None
+                caption_input_ids = torch.tensor([], dtype=torch.long)  # Empty tensor as placeholder
+                attention_mask = torch.tensor([], dtype=torch.long)  # Empty tensor as placeholder
 
             if self.set == "test":
                 return image_name, image, caption_input_ids, attention_mask, label
