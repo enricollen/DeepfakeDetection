@@ -13,7 +13,6 @@ from images_dataset_R50_BERT import ImagesDataset
 from MLP import MLP
 import torchvision.models as models
 from transformers import BertModel, BertTokenizer
-from transformers import RobertaModel, RobertaTokenizer
 from LOGGER.logger import Logger
 
 load_dotenv()
@@ -143,10 +142,6 @@ if __name__ == '__main__':
     bert_tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
     bert_model = bert_model.to(device)
 
-    #roberta_model = RobertaModel.from_pretrained('roberta-large')
-    #roberta_tokenizer = RobertaTokenizer.from_pretrained('roberta-large')
-    #roberta_model = roberta_model.to(device)
-
     train_dataset = ImagesDataset(TRAIN_DATA_PATH, TRAIN_CSV_PATH, IMAGE_SIZE, bert_tokenizer, set="train", modal_mode=MODAL_MODE) 
     train_sampler = BalancedSampler(train_dataset) 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, sampler=train_sampler, num_workers=NUM_WORKERS) #collate_fn=custom_collate_fn
@@ -184,7 +179,7 @@ if __name__ == '__main__':
     prev_val_loss = float('inf')
     patience_counter = 0
 
-    #LOGGER = Logger(LOG_DIR)
+    LOGGER = Logger(LOG_DIR)
 
     for epoch in range(NUM_EPOCHS):
 
@@ -197,7 +192,7 @@ if __name__ == '__main__':
         classified_as_label_1_train = 0
         progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch+1}/{NUM_EPOCHS}")
 
-        for batch_index, (images, input_ids, attention_masks, labels, types) in progress_bar:
+        for batch_index, (images, input_ids, attention_masks, labels) in progress_bar:
             #batch_type_counts = collections.Counter(labels.numpy())
             #print("Batch Type Counts:", batch_type_counts)
             images = images.to(device)
@@ -205,15 +200,12 @@ if __name__ == '__main__':
 
             with torch.no_grad():
                 if MODAL_MODE == 1 and input_ids is not None and attention_masks is not None:
-                    #print("input_ids shape:", input_ids.shape)
-                    #print("attention_masks shape:", attention_masks.shape)
                     input_ids = input_ids.to(device).squeeze(1)
                     attention_masks = attention_masks.to(device).squeeze(1)
                     
                     text_outputs = bert_model(input_ids=input_ids, attention_mask=attention_masks)
                     input_ids = input_ids.cpu()
                     attention_masks = attention_masks.cpu()
-                    #text_features = text_outputs.cpu()
                     text_features = text_outputs.pooler_output
                     text_features = text_features.cpu()
                     #text_features /= text_features.norm(dim=-1, keepdim=True)
@@ -222,18 +214,12 @@ if __name__ == '__main__':
                 image_features = image_features.cpu()
                 #image_features /= image_features.norm(dim=-1, keepdim=True)
                 image_features = torch.squeeze(image_features)
-                #print(image_features.shape)
 
                 if MODAL_MODE == 0:
                     features = image_features
                 elif MODAL_MODE == 1:
-                    #for i in text_features:
-                    #    print(i)
                     features = torch.cat((image_features, text_features), dim=1)
                     features = features.float()
-                    #features = torch.nn.functional.normalize(features)
-                    #print(features)
-                    #print(features.shape)
                 else:
                     print("ERROR: unknown modal mode")
                     exit()
@@ -257,7 +243,14 @@ if __name__ == '__main__':
             # samples classified as label 0 and label 1
             classified_as_label_0_train += torch.sum(predicted_train == 0).item()
             classified_as_label_1_train += torch.sum(predicted_train == 1).item()
-                
+            
+            ### LOGGER ### 
+            if batch_index % 50 == 0:
+                train_batch_accuracy = correct_train / total_train
+                LOGGER.log_scalar('Train/Accuracy', train_batch_accuracy, epoch * len(train_loader) + batch_index)
+                LOGGER.log_scalar('Train/Loss', loss.item(), epoch * len(train_loader) + batch_index)
+            ### END LOGGER ###
+
         train_loss /= len(train_loader)
         train_accuracy = correct_train / total_train
         
@@ -273,7 +266,7 @@ if __name__ == '__main__':
         classified_as_label_1_val = 0
         progress_bar = tqdm(enumerate(val_loader), total=len(val_loader), desc=f"Epoch {epoch+1}/{NUM_EPOCHS} (Validation)")
 
-        for batch_index, (images, input_ids, attention_masks, labels, types) in progress_bar:
+        for batch_index, (images, input_ids, attention_masks, labels) in progress_bar:
             images = images.to(device)
             labels = labels.float().unsqueeze(1).to(device)
 
@@ -285,7 +278,6 @@ if __name__ == '__main__':
                     text_outputs = bert_model(input_ids=input_ids, attention_mask=attention_masks)
                     input_ids = input_ids.cpu()
                     attention_masks = attention_masks.cpu()
-                    #text_features = text_outputs.cpu()
                     text_features = text_outputs.pooler_output
                     text_features = text_features.cpu()
                     #text_features /= text_features.norm(dim=-1, keepdim=True)
@@ -301,7 +293,6 @@ if __name__ == '__main__':
                 elif MODAL_MODE == 1:
                     features = torch.cat((image_features, text_features), dim=1)
                     features = features.float()
-                    #features = torch.nn.functional.normalize(features)
                 else:
                     print("ERROR: unknown modal mode")
                     exit()
@@ -322,7 +313,14 @@ if __name__ == '__main__':
                 # samples classified as label 0 and label 1
                 classified_as_label_0_val += torch.sum(predicted_val == 0).item()
                 classified_as_label_1_val += torch.sum(predicted_val == 1).item()
-            
+
+                ### LOGGER ### 
+                if batch_index % 50 == 0:
+                    val_batch_accuracy = correct_val / total_val
+                    LOGGER.log_scalar('Validation/Accuracy', val_batch_accuracy, epoch * len(val_loader) + batch_index)
+                    LOGGER.log_scalar('Validation/Loss', loss.item(), epoch * len(val_loader) + batch_index)
+                ### END LOGGER ###
+
         val_loss /= len(val_loader)
         val_accuracy = correct_val / total_val
 
@@ -348,10 +346,11 @@ if __name__ == '__main__':
                     os.makedirs(SAVE_PATH)
                 model_filename = os.path.join(SAVE_PATH, EXPORTED_MODEL_NAME)
                 torch.save(classifier.state_dict(), model_filename)
+                print("New best model saved")
 
         # Early stopping
         if patience_counter >= PATIENCE:
             print("Early stopping.")
             break
     
-    #LOGGER.close()
+    LOGGER.close()
