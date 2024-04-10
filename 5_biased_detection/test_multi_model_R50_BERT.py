@@ -216,7 +216,8 @@ def evaluate_model(model_path, modal_mode):
     report_df = print_results(classified_images)
     print(report_df)
 
-    return ground_truths, predictions_not_rounded, f"{model_path.split('/')[-3]}"
+    model_type = "unimodal" if modal_mode == 0 else "multimodal"
+    return ground_truths, predictions_not_rounded, f"{model_path.split('/')[-3]}_"+model_type
 
 
 if __name__ == "__main__":
@@ -228,8 +229,8 @@ if __name__ == "__main__":
     np.random.seed(42)
 
     model_configs = [
-    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_2_unimodal/RN50_BERT/run1/best_unimodal_classifier.pth", 0),
-    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_2_multimodal/RN50_BERT/run1/best_multimodal_classifier.pth", 1),
+    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_unimodal/RN50_BERT/fine_tuning/run1/best_unimodal_classifier.pth", 0),
+    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_multimodal/RN50_BERT/fine_tuning/run1/best_multimodal_classifier.pth", 1),
     ]
 
     correct_labels_list = []
