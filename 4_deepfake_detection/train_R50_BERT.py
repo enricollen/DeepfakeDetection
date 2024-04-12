@@ -114,11 +114,10 @@ if __name__ == '__main__':
     output_dim = 1  # Binary classification
     classifier = MLP(input_dim, hidden_dims, output_dim).to(device)
 
-
     # loss and optimizer
     train_counters = collections.Counter(train_dataset.labels)
     loss_fn = torch.nn.BCEWithLogitsLoss() 
-    optimizer = optim.Adam(classifier.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+    optimizer = optim.AdamW(classifier.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
     # Print statistics
     print_statistics(classifier, train_dataset, val_dataset, train_counters)
