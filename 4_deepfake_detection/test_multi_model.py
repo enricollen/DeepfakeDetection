@@ -109,7 +109,7 @@ def save_all_roc_curves(correct_labels_list, preds_list, model_names, eers):
     plt.plot([0, 1], [0, 1], 'k--')
 
     # Define a list of colors for the threshold points
-    colors = ['pink', 'purple', 'red']
+    colors = ['pink', 'purple', 'red', "brown"]
 
     for (correct_labels, preds, model_name, eer, color) in zip(correct_labels_list, preds_list, model_names, eers, colors):
         fpr, tpr, thresholds = roc_curve(correct_labels, preds)
@@ -195,6 +195,7 @@ if __name__ == "__main__":
     
     model_configs = [
     ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_unimodal/run3/best_unimodal_classifier.pth", 0),
+    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_multimodal/run_1/best_multimodal_classifier.pth", 1),
     ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_2_unimodal/run3/best_unimodal_classifier.pth", 0),
     ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_2_multimodal/run7/best_multimodal_classifier.pth", 1),
     ]
