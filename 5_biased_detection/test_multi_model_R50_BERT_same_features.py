@@ -48,7 +48,7 @@ def load_model(best_model_path, modal_mode, reducer_path):
     if modal_mode == 0:
         input_dim = 768  # Output dimension from ResNet50
     else:
-        input_dim = 768 + 768  # Sum of output dimensions from ResNet50 and BERT
+        input_dim = 768 #+ 768  # Sum of output dimensions from ResNet50 and BERT
     hidden_dims = HIDDEN_DIMS 
     output_dim = 1  # Binary classification
 
@@ -157,7 +157,7 @@ class FeatureReducer(nn.Module):
         x = x.view(x.size(0), -1)  # Flatten the features if not already flattened
         return self.reducer(x)
     
-def evaluate_model(model_path, modal_mode, reducer_path):
+def evaluate_model(model_path, modal_mode, features_combination, reducer_path):
     print(f"Evaluating model: {model_path} with modal_mode {modal_mode}")
     # Load model
     resnet50, bert_model, bert_tokenizer, classifier, reducer = load_model(model_path, modal_mode, reducer_path)
@@ -200,7 +200,13 @@ def evaluate_model(model_path, modal_mode, reducer_path):
                 if modal_mode == 0:
                     features = reduced_features
                 elif modal_mode == 1:
-                    features = torch.cat((reduced_features, text_features), dim=1)
+                    #features = torch.cat((reduced_features, text_features), dim=1)
+                    reduced_features = nn.functional.normalize(reduced_features, p=2, dim=1)
+                    text_features = nn.functional.normalize(text_features, p=2, dim=1)
+                    #features = reduced_features * text_features
+                    #features = (reduced_features + text_features) / 2
+                    #features = torch.max(reduced_features, text_features)
+                    features = reduced_features + text_features
                     features = features.float()
                     #features = torch.nn.functional.normalize(features)
                 else:
@@ -233,32 +239,31 @@ def evaluate_model(model_path, modal_mode, reducer_path):
     print(report_df)
 
     model_type = "unimodal" if modal_mode == 0 else "multimodal"
-    return ground_truths, predictions_not_rounded, f"{model_path.split('/')[-3]}_"+model_type
+    return ground_truths, predictions_not_rounded, f"{model_path.split('/')[-3]}_"+model_type+"_"+features_combination
 
 
 if __name__ == "__main__":
 
     torch.backends.cudnn.deterministic = True
+    #torch.backends.cudnn.benchmark = False
     random.seed(42)
     torch.manual_seed(42)
     torch.cuda.manual_seed(42)
     np.random.seed(42)
 
     model_configs = [
-    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_unimodal/RN50_BERT/run4/best_unimodal_classifier.pth", 0),
-    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_multimodal/RN50_BERT/run5/best_multimodal_classifier.pth", 1)
+    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_multimodal/RN50_BERT/run7/best_multimodal_classifier.pth", 1, "addition")
     ]
 
-    reducer_configs = ["/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_unimodal/RN50_BERT/run4/reducer.pth",
-                       "/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_multimodal/RN50_BERT/run5/reducer.pth"
+    reducer_configs = ["/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_multimodal/RN50_BERT/run7/resnet_reducer.pth"
     ]
 
     correct_labels_list = []
     preds_list = []
     model_names = []
 
-    for (model_path, modal_mode), reducer_path in zip(model_configs, reducer_configs):
-        ground_truths, predictions_not_rounded, model_name = evaluate_model(model_path, modal_mode, reducer_path)
+    for (model_path, modal_mode, features_combination), reducer_path in zip(model_configs, reducer_configs):
+        ground_truths, predictions_not_rounded, model_name = evaluate_model(model_path, modal_mode, features_combination, reducer_path)
         correct_labels_list.append(ground_truths)
         preds_list.append(predictions_not_rounded)
         model_names.append(model_name)
