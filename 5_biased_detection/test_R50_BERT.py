@@ -51,7 +51,7 @@ def load_model(best_model_path):
     hidden_dims = HIDDEN_DIMS 
     output_dim = 1  # Binary classification
     classifier = MLP(input_dim, hidden_dims, output_dim).to(device)
-    best_model_path = "/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_2_multimodal/RN50_BERT/run1/best_multimodal_classifier.pth"
+    best_model_path = "/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_multimodal/RN50_BERT/fine_tuning/run1/best_multimodal_classifier.pth"
     classifier.load_state_dict(torch.load(best_model_path))
     classifier.eval() 
 
@@ -113,13 +113,13 @@ def print_results(classified_images):
     report_df = pd.DataFrame(report_data, columns=['Combination', 'Total', 'Misclassified', 'False Positive %', 'False Negative %'])
     return report_df
 
-def save_roc_curves(correct_labels, preds, model_name):
+def save_roc_curves(correct_labels, preds, model_name, color='red'):
     fpr, tpr, thresholds = roc_curve(correct_labels, preds)
     roc_auc = auc(fpr, tpr)
 
     plt.figure(figsize=(8, 6))
-    plt.plot([0, 1], [0, 1], 'k--', label='No Skill')
-    plt.plot(fpr, tpr, label=f"{model_name} (AUC = {roc_auc:.3f})")
+    plt.plot([0, 1], [0, 1], 'k--', label='No Skill', color='gray')  # No skill line color
+    plt.plot(fpr, tpr, label=f"{model_name} (AUC = {roc_auc:.3f})", color=color)  # ROC curve color
 
     # Find the closest threshold to 0.5
     closest_threshold_index = np.argmin(np.abs(thresholds - 0.5))
@@ -127,7 +127,7 @@ def save_roc_curves(correct_labels, preds, model_name):
     closest_tpr = tpr[closest_threshold_index]
 
     # Highlight the 0.5 threshold point
-    plt.plot(closest_fpr, closest_tpr, 'ro', label='Threshold 0.5')
+    plt.plot(closest_fpr, closest_tpr, 'o', color=color, label='Threshold 0.5')  # Threshold point color
 
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
@@ -213,7 +213,7 @@ if __name__ == "__main__":
 
     accuracy = np.mean(predictions == ground_truths)
     accuracy = accuracy_score(ground_truths, predictions)
-    save_roc_curves(ground_truths,predictions_not_rounded, "biased_"+str(MODAL_MODE)+"_R50_BERT")
+    save_roc_curves(ground_truths,predictions_not_rounded, "fine_tuned_multimodal_fakenews", "red")
     print(f"\nAccuracy: {accuracy:.4f}")
 
     report_df = print_results(classified_images)

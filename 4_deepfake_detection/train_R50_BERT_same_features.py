@@ -81,7 +81,7 @@ def print_statistics(classifier, train_dataset, val_dataset, train_counters):
     print("___________________\n\n")
 
 class FeatureReducer(nn.Module):
-    def __init__(self, input_dim=2048, output_dim=512):
+    def __init__(self, input_dim=2048, output_dim=768):
         super(FeatureReducer, self).__init__()
         self.reducer = nn.Linear(input_dim, output_dim)
     
@@ -117,20 +117,20 @@ if __name__ == '__main__':
 
     # MLP
     if MODAL_MODE == 0:
-        input_dim = 512  # Output dimension from ResNet50
+        input_dim = 768  # Output dimension from ResNet50
     else:
-        input_dim = 512 + 512  # Sum of output dimensions from ResNet50 and BERT
+        input_dim = 768 + 768  # Sum of output dimensions from ResNet50 and BERT
     hidden_dims = HIDDEN_DIMS 
     output_dim = 1  # Binary classification
 
-    resnet_reducer = FeatureReducer(input_dim=2048, output_dim=512).to(device)
-    bert_reducer = FeatureReducer(input_dim=768, output_dim=512).to(device)
+    resnet_reducer = FeatureReducer(input_dim=2048, output_dim=768).to(device)
+    #bert_reducer = FeatureReducer(input_dim=768, output_dim=512).to(device)
     classifier = MLP(input_dim, hidden_dims, output_dim).to(device)
     
     # loss and optimizer
     train_counters = collections.Counter(train_dataset.labels)
     loss_fn = torch.nn.BCEWithLogitsLoss() 
-    optimizer = torch.optim.AdamW(list(classifier.parameters()) + list(resnet_reducer.parameters()) + list(bert_reducer.parameters()), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+    optimizer = torch.optim.AdamW(list(classifier.parameters()) + list(resnet_reducer.parameters()), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
     # Print statistics
     print_statistics(classifier, train_dataset, val_dataset, train_counters)
@@ -170,9 +170,9 @@ if __name__ == '__main__':
                     input_ids = input_ids.cpu()
                     attention_masks = attention_masks.cpu()
                     text_features = text_outputs.pooler_output
-                    #text_features = text_features.cpu()
-                    reduced_text_features = bert_reducer(text_features)
-                    reduced_text_features = reduced_text_features.cpu()
+                    text_features = text_features.cpu()
+                    #reduced_text_features = bert_reducer(text_features)
+                    #reduced_text_features = reduced_text_features.cpu()
                     #text_features /= text_features.norm(dim=-1, keepdim=True)
                         
                 image_features = resnet50(images)
@@ -185,7 +185,10 @@ if __name__ == '__main__':
                 if MODAL_MODE == 0:
                     features = reduced_images_features
                 elif MODAL_MODE == 1:
-                    features = torch.cat((reduced_images_features, reduced_text_features), dim=1)
+                    features = torch.cat((reduced_images_features, text_features), dim=1)
+                    #reduced_images_features = nn.functional.normalize(reduced_images_features, p=2, dim=1)
+                    #text_features = nn.functional.normalize(text_features, p=2, dim=1)
+                    #features = (reduced_images_features + text_features) / 2
                     features = features.float()
                 else:
                     print("ERROR: unknown modal mode")
@@ -247,7 +250,7 @@ if __name__ == '__main__':
                     attention_masks = attention_masks.cpu()
                     text_features = text_outputs.pooler_output
                     text_features = text_features.cpu()
-                    reduced_text_features = bert_reducer(text_features)
+                    #reduced_text_features = bert_reducer(text_features)
                     #text_features /= text_features.norm(dim=-1, keepdim=True)
 
                 
@@ -262,7 +265,10 @@ if __name__ == '__main__':
                 if MODAL_MODE == 0:
                     features = reduced_images_features
                 elif MODAL_MODE == 1:
-                    features = torch.cat((reduced_images_features, reduced_text_features), dim=1)
+                    #features = torch.cat((reduced_images_features, text_features), dim=1)
+                    reduced_images_features = nn.functional.normalize(reduced_images_features, p=2, dim=1)
+                    text_features = nn.functional.normalize(text_features, p=2, dim=1)
+                    features = (reduced_images_features + text_features) / 2
                     features = features.float()
                 else:
                     print("ERROR: unknown modal mode")
@@ -318,7 +324,7 @@ if __name__ == '__main__':
                 model_filename = os.path.join(SAVE_PATH, EXPORTED_MODEL_NAME)
                 torch.save(classifier.state_dict(), model_filename)
                 torch.save(resnet_reducer.state_dict(), os.path.join(SAVE_PATH, "resnet_reducer.pth"))
-                torch.save(bert_reducer.state_dict(), os.path.join(SAVE_PATH, "resnet_reducer.pth"))
+                #torch.save(bert_reducer.state_dict(), os.path.join(SAVE_PATH, "resnet_reducer.pth"))
                 print("New best model saved")
 
         # Early stopping
