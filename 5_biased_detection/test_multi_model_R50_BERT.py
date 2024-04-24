@@ -157,6 +157,7 @@ def evaluate_model(model_path, modal_mode):
     predictions_not_rounded = []
     ground_truths = []
     classified_images = []
+    misclassified_images = []
 
     for batch_index, (image_names, images, input_ids, attention_masks, labels) in tqdm(enumerate(test_loader), total=len(test_loader), desc="Inference"):
         images = images.to(device)
@@ -200,10 +201,13 @@ def evaluate_model(model_path, modal_mode):
                 predictions.extend(predicted_test)
                 predictions_not_rounded.extend(torch.sigmoid(outputs).cpu().numpy())
                 ground_truths.extend(labels)
+                misclassified_images.extend([image_name for image_name, label, pred in zip(image_names, labels, predicted_test) if pred != label])
 
         for image_name, true_label, pred in zip(image_names, labels, predicted_test.flatten()):
             classification_status = 'Correctly Classified' if pred == true_label else 'Misclassified'
             classified_images.append((image_name if isinstance(image_name, str) else image_name.item(), true_label.item(), pred.item(), classification_status))
+            if classification_status == 'Misclassified':
+                misclassified_images.append(image_name if isinstance(image_name, str) else image_name.item())
 
     # Performance Eval
     predictions = np.array(predictions)
@@ -217,20 +221,21 @@ def evaluate_model(model_path, modal_mode):
     print(report_df)
 
     model_type = "unimodal" if modal_mode == 0 else "multimodal"
-    return ground_truths, predictions_not_rounded, f"{model_path.split('/')[-3]}_"+model_type
+    return ground_truths, predictions_not_rounded, f"{model_path.split('/')[-3]}_"+model_type, misclassified_images
 
 
 if __name__ == "__main__":
 
     torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
     random.seed(42)
     torch.manual_seed(42)
     torch.cuda.manual_seed(42)
     np.random.seed(42)
 
     model_configs = [
-    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_unimodal/RN50_BERT/fine_tuning/run1/best_unimodal_classifier.pth", 0),
-    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_multimodal/RN50_BERT/fine_tuning/run1/best_multimodal_classifier.pth", 1),
+    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_unimodal/RN50_BERT/fine_tuning/run2/best_unimodal_classifier.pth", 0),
+    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_multimodal/RN50_BERT/fine_tuning/run2/best_multimodal_classifier.pth", 1)
     ]
 
     correct_labels_list = []
@@ -238,10 +243,16 @@ if __name__ == "__main__":
     model_names = []
 
     for model_path, modal_mode in model_configs:
-        ground_truths, predictions_not_rounded, model_name = evaluate_model(model_path, modal_mode)
+        ground_truths, predictions_not_rounded, model_name, misclassified_images = evaluate_model(model_path, modal_mode)
         correct_labels_list.append(ground_truths)
         preds_list.append(predictions_not_rounded)
         model_names.append(model_name)
+
+        # Write misclassified image names to a text file
+        misclassified_images_file_path = f"misclassified_{model_name}.txt"
+        with open(misclassified_images_file_path, 'w') as file:
+            for image_name in misclassified_images:
+                file.write(f"{image_name}\n")
 
     eers = []
 
