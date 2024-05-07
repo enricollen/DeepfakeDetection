@@ -106,19 +106,26 @@ def print_results(classified_images):
 
 def save_all_roc_curves(correct_labels_list, preds_list, model_names, eers):
     plt.figure(figsize=(10, 8))
-    plt.plot([0, 1], [0, 1], 'k--')
+    plt.plot([0, 1], [0, 1], 'k--')  # Plotting the diagonal dashed line
 
     # Define a list of colors for the threshold points
-    colors = ['pink', 'purple', 'red', "brown"]
+    colors = ['black', 'green', 'red', 'black', 'green', 'red']
 
-    for (correct_labels, preds, model_name, eer, color) in zip(correct_labels_list, preds_list, model_names, eers, colors):
+    # Iterate through each model's data
+    for i, (correct_labels, preds, model_name, eer, color) in enumerate(zip(correct_labels_list, preds_list, model_names, eers, colors)):
         fpr, tpr, thresholds = roc_curve(correct_labels, preds)
         model_auc = auc(fpr, tpr)
-        plt.plot(fpr, tpr, label=f"{model_name} (AUC = {model_auc:.3f}) (EER = {eer:.4f})")
         
-        #find the threshold closest to 0.5
+        # Plotting the ROC curve for the model
+        plt.plot(fpr, tpr, label=f"{model_name} (AUC = {model_auc:.3f}) (EER = {eer:.4f})", color=color)
+        
+        # Finding the threshold closest to 0.5 and marking it on the plot
         closest_threshold_index = np.argmin(np.abs(thresholds - 0.5))
         plt.plot(fpr[closest_threshold_index], tpr[closest_threshold_index], marker='o', color=color, label=f'Threshold 0.5 for {model_name}')
+    
+    # zoom into the interval
+    #plt.xlim(0.0, 0.3)
+    #plt.ylim(0.0, 1.0)
 
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
@@ -138,12 +145,12 @@ def calculate_eer(y_true, y_scores):
     return eer, thresholds[min_distance_idx]
 
 
-def evaluate_model(model_path, modal_mode):
+def evaluate_model(model_path, modal_mode, test_csv_path):
     print(f"Evaluating model: {model_path} with modal_mode {modal_mode}")
     clip_model, classifier = load_model(model_path, modal_mode)
 
     # dataset and dataloader for evaluation
-    test_dataset = ImagesDataset(TEST_DATA_PATH, TEST_CSV_PATH, IMAGE_SIZE, set="test", modal_mode=modal_mode)  
+    test_dataset = ImagesDataset(TEST_DATA_PATH, test_csv_path, IMAGE_SIZE, set="test", modal_mode=modal_mode)  
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)
 
     predictions = []
@@ -194,18 +201,17 @@ if __name__ == "__main__":
 
     
     model_configs = [
-    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_unimodal/run3/best_unimodal_classifier.pth", 0),
-    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_multimodal/run_1/best_multimodal_classifier.pth", 1),
-    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_2_unimodal/run3/best_unimodal_classifier.pth", 0),
-    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_2_multimodal/run7/best_multimodal_classifier.pth", 1),
+    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_2_multimodal/CLIP/run8/best_multimodal_classifier.pth", 1, '/home/enriconello/DeepFakeDetection/test_balanced/csv/test.csv'),
+    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_2_multimodal/CLIP/run8/best_multimodal_classifier.pth", 1, '/home/enriconello/DeepFakeDetection/test_balanced/csv/real_text_rows.csv'),
+    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_2_multimodal/CLIP/run8/best_multimodal_classifier.pth", 1, '/home/enriconello/DeepFakeDetection/test_balanced/csv/fakenews_text_rows.csv')
     ]
 
 correct_labels_list = []
 preds_list = []
 model_names = []
 
-for model_path, modal_mode in model_configs:
-    ground_truths, predictions_not_rounded, model_name = evaluate_model(model_path, modal_mode)
+for model_path, modal_mode, test_csv_path in model_configs:
+    ground_truths, predictions_not_rounded, model_name = evaluate_model(model_path, modal_mode, test_csv_path)
     correct_labels_list.append(ground_truths)
     preds_list.append(predictions_not_rounded)
     model_names.append(model_name)
