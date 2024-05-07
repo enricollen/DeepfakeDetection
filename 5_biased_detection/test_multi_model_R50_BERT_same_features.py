@@ -48,7 +48,7 @@ def load_model(best_model_path, modal_mode, reducer_path):
     if modal_mode == 0:
         input_dim = 768  # Output dimension from ResNet50
     else:
-        input_dim = 768 #+ 768  # Sum of output dimensions from ResNet50 and BERT
+        input_dim = 768 + 768  # Sum of output dimensions from ResNet50 and BERT
     hidden_dims = HIDDEN_DIMS 
     output_dim = 1  # Binary classification
 
@@ -118,19 +118,26 @@ def print_results(classified_images):
 
 def save_all_roc_curves(correct_labels_list, preds_list, model_names, eers):
     plt.figure(figsize=(10, 8))
-    plt.plot([0, 1], [0, 1], 'k--')
+    plt.plot([0, 1], [0, 1], 'k--')  # Plotting the diagonal dashed line
 
     # Define a list of colors for the threshold points
-    colors = ['pink', 'purple', 'red']
+    colors = ['black', 'green', 'red', 'black', 'green', 'red']
 
-    for (correct_labels, preds, model_name, eer, color) in zip(correct_labels_list, preds_list, model_names, eers, colors):
+    # Iterate through each model's data
+    for i, (correct_labels, preds, model_name, eer, color) in enumerate(zip(correct_labels_list, preds_list, model_names, eers, colors)):
         fpr, tpr, thresholds = roc_curve(correct_labels, preds)
         model_auc = auc(fpr, tpr)
-        plt.plot(fpr, tpr, label=f"{model_name} (AUC = {model_auc:.3f}) (EER = {eer:.4f})")
         
-        #find the threshold closest to 0.5
+        # Plotting the ROC curve for the model
+        plt.plot(fpr, tpr, label=f"{model_name} (AUC = {model_auc:.3f}) (EER = {eer:.4f})", color=color)
+        
+        # Finding the threshold closest to 0.5 and marking it on the plot
         closest_threshold_index = np.argmin(np.abs(thresholds - 0.5))
         plt.plot(fpr[closest_threshold_index], tpr[closest_threshold_index], marker='o', color=color, label=f'Threshold 0.5 for {model_name}')
+    
+    # zoom into the interval
+    #plt.xlim(0.0, 0.3)
+    #plt.ylim(0.0, 1.0)
 
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
@@ -157,13 +164,13 @@ class FeatureReducer(nn.Module):
         x = x.view(x.size(0), -1)  # Flatten the features if not already flattened
         return self.reducer(x)
     
-def evaluate_model(model_path, modal_mode, features_combination, reducer_path):
+def evaluate_model(model_path, modal_mode, features_combination, reducer_path, test_csv_path):
     print(f"Evaluating model: {model_path} with modal_mode {modal_mode}")
     # Load model
     resnet50, bert_model, bert_tokenizer, classifier, reducer = load_model(model_path, modal_mode, reducer_path)
 
      # dataset and dataloader for evaluation
-    test_dataset = ImagesDataset(TEST_DATA_PATH, TEST_CSV_PATH, IMAGE_SIZE, bert_tokenizer, set="test", modal_mode=modal_mode)  
+    test_dataset = ImagesDataset(TEST_DATA_PATH, test_csv_path, IMAGE_SIZE, bert_tokenizer, set="test", modal_mode=modal_mode)  
     test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)
 
     predictions = []
@@ -200,13 +207,13 @@ def evaluate_model(model_path, modal_mode, features_combination, reducer_path):
                 if modal_mode == 0:
                     features = reduced_features
                 elif modal_mode == 1:
-                    #features = torch.cat((reduced_features, text_features), dim=1)
-                    reduced_features = nn.functional.normalize(reduced_features, p=2, dim=1)
-                    text_features = nn.functional.normalize(text_features, p=2, dim=1)
+                    features = torch.cat((reduced_features, text_features), dim=1)
+                    #reduced_features = nn.functional.normalize(reduced_features, p=2, dim=1)
+                    #text_features = nn.functional.normalize(text_features, p=2, dim=1)
                     #features = reduced_features * text_features
                     #features = (reduced_features + text_features) / 2
                     #features = torch.max(reduced_features, text_features)
-                    features = reduced_features + text_features
+                    #features = reduced_features + text_features
                     features = features.float()
                     #features = torch.nn.functional.normalize(features)
                 else:
@@ -252,18 +259,23 @@ if __name__ == "__main__":
     np.random.seed(42)
 
     model_configs = [
-    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_multimodal/RN50_BERT/run7/best_multimodal_classifier.pth", 1, "addition")
+    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_multimodal/RN50_BERT/run5/best_multimodal_classifier.pth", 1, "concat", '/home/enriconello/DeepFakeDetection/test_balanced/csv/test.csv'),
+    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_multimodal/RN50_BERT/run5/best_multimodal_classifier.pth", 1, "concat", '/home/enriconello/DeepFakeDetection/test_balanced/csv/real_text_rows.csv'),
+    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_multimodal/RN50_BERT/run5/best_multimodal_classifier.pth", 1, "concat", '/home/enriconello/DeepFakeDetection/test_balanced/csv/fakenews_text_rows.csv')
     ]
 
-    reducer_configs = ["/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_multimodal/RN50_BERT/run7/resnet_reducer.pth"
+    reducer_configs = [
+        "/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_multimodal/RN50_BERT/run5/reducer.pth",
+        "/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_multimodal/RN50_BERT/run5/reducer.pth",
+        "/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_multimodal/RN50_BERT/run5/reducer.pth"
     ]
 
     correct_labels_list = []
     preds_list = []
     model_names = []
 
-    for (model_path, modal_mode, features_combination), reducer_path in zip(model_configs, reducer_configs):
-        ground_truths, predictions_not_rounded, model_name = evaluate_model(model_path, modal_mode, features_combination, reducer_path)
+    for (model_path, modal_mode, features_combination, test_csv_path), reducer_path in zip(model_configs, reducer_configs):
+        ground_truths, predictions_not_rounded, model_name = evaluate_model(model_path, modal_mode, features_combination, reducer_path, test_csv_path)
         correct_labels_list.append(ground_truths)
         preds_list.append(predictions_not_rounded)
         model_names.append(model_name)
