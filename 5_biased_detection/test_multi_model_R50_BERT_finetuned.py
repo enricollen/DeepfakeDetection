@@ -135,7 +135,7 @@ def save_all_roc_curves(correct_labels_list, preds_list, model_names, eers):
         
         # Finding the threshold closest to 0.5 and marking it on the plot
         closest_threshold_index = np.argmin(np.abs(thresholds - 0.5))
-        plt.plot(fpr[closest_threshold_index], tpr[closest_threshold_index], marker='o', color=color, label=f'Threshold 0.5 for {model_name}')
+        plt.plot(fpr[closest_threshold_index], tpr[closest_threshold_index], marker='o', color=color) #label=f'Threshold 0.5 for {model_name}'
     
     # zoom into the interval
     plt.xlim(0.0, 0.3)

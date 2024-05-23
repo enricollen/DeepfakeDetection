@@ -157,6 +157,7 @@ def evaluate_model(model_path, modal_mode, test_csv_path):
     predictions_not_rounded = []
     ground_truths = []
     classified_images = []
+    misclassified_images = []
 
     for batch_index, (image_names, images, captions, labels) in tqdm(enumerate(test_loader), total=len(test_loader), desc="Inference"):
         images = np.transpose(images, (0, 3, 1, 2))
@@ -178,17 +179,21 @@ def evaluate_model(model_path, modal_mode, test_csv_path):
             predictions.extend(predicted_test)
             predictions_not_rounded.extend(torch.sigmoid(outputs).cpu().numpy())
             ground_truths.extend(labels)
+            misclassified_images.extend([image_name for image_name, label, pred in zip(image_names, labels, predicted_test) if pred != label])
+
 
             for image_name, true_label, pred in zip(image_names, labels, predicted_test.flatten()):
                 classification_status = 'Correctly Classified' if pred == true_label else 'Misclassified'
                 classified_images.append((image_name if isinstance(image_name, str) else image_name.item(), true_label.item(), pred.item(), classification_status))
+                if classification_status == 'Misclassified':
+                    misclassified_images.append(image_name if isinstance(image_name, str) else image_name.item())
 
     accuracy = accuracy_score(ground_truths, predictions)
     print(f"\nAccuracy: {accuracy:.4f}")
     report_df = print_results(classified_images)
     print(report_df)
 
-    return ground_truths, predictions_not_rounded, f"{model_path.split('/')[-3]}"
+    return ground_truths, predictions_not_rounded, f"{model_path.split('/')[-3]}", misclassified_images
 
 
 if __name__ == "__main__":
@@ -201,9 +206,7 @@ if __name__ == "__main__":
 
     
     model_configs = [
-    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_2_multimodal/CLIP/run8/best_multimodal_classifier.pth", 1, '/home/enriconello/DeepFakeDetection/test_balanced/csv/test.csv'),
-    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_2_multimodal/CLIP/run8/best_multimodal_classifier.pth", 1, '/home/enriconello/DeepFakeDetection/test_balanced/csv/real_text_rows.csv'),
-    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_2_multimodal/CLIP/run8/best_multimodal_classifier.pth", 1, '/home/enriconello/DeepFakeDetection/test_balanced/csv/fakenews_text_rows.csv')
+    ("/home/enriconello/DeepFakeDetection/Thesis/5_biased_detection/comparison/train_1_multimodal/CLIP/run_1/best_multimodal_classifier.pth", 1, '/home/enriconello/DeepFakeDetection/test_balanced/csv/test.csv')
     ]
 
 correct_labels_list = []
@@ -211,10 +214,16 @@ preds_list = []
 model_names = []
 
 for model_path, modal_mode, test_csv_path in model_configs:
-    ground_truths, predictions_not_rounded, model_name = evaluate_model(model_path, modal_mode, test_csv_path)
+    ground_truths, predictions_not_rounded, model_name, misclassified_images = evaluate_model(model_path, modal_mode, test_csv_path)
     correct_labels_list.append(ground_truths)
     preds_list.append(predictions_not_rounded)
     model_names.append(model_name)
+
+    # Write misclassified image names to a text file
+    misclassified_images_file_path = f"misclassified_{model_name}.txt"
+    with open(misclassified_images_file_path, 'w') as file:
+        for image_name in misclassified_images:
+            file.write(f"{image_name}\n")
 
 eers = []
 
