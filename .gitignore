@@ -8,3 +8,4 @@ yolov3.weights
 4_deepfake_detection/LOGGER/Unimodal/*
 4_deepfake_detection/LOGGER/Multimodal/*
 *.pyc
+5_biased_detection/comparison/*

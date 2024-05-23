@@ -12,7 +12,7 @@ from glide_text2im.model_creation import (
     model_and_diffusion_defaults_upsampler
 )
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 class GLIDE:
     def __init__(self) -> None:
@@ -106,15 +106,13 @@ class GLIDE:
         # Sample from the base model #
         ##############################
 
-        rows = len(prompts)
+        #rows = len(prompts)
 
-        start_time = time.time()
+        #start_time = time.time()
 
-        generated_images = []
-        generated_image_info = []
-
-        for index, prompt in enumerate(prompts):
-            print(f"Generating for prompt: {prompt}")
+        for prompt, image_id in zip(prompts, image_ids):
+            
+            #print(f"Generating for prompt: {prompt}")
             # Create the text tokens to feed to the model.
             tokens = self.model_base.tokenizer.encode(prompt)
             tokens, mask = self.model_base.tokenizer.padded_tokens_and_mask(
@@ -193,43 +191,23 @@ class GLIDE:
             self.model_up.del_cache()
 
             # Save the output
-            self.save_images(up_samples, self.OUTPUT_FOLDER, image_ids)
+            self.save_images(up_samples, self.OUTPUT_FOLDER, [image_id])
 
-            generated_image_info.extend([(original_id, f"GL_fake_{original_id}") for original_id in image_ids])
+            #print(f"Generated image name: GL_fake_{image_id}")
 
-            print(f"Generated image name: GL_fake_{image_ids[index]}")
-
-            if index % 100:
-                print("Generated", str(index), "/", str(rows))
-
-        end_time = time.time()
+        #end_time = time.time()
 
         # Calculate the total time
-        total_time_seconds = end_time - start_time
+        #total_time_seconds = end_time - start_time
 
         # Convert total time to hours, minutes, and seconds
-        total_hours, remainder = divmod(total_time_seconds, 3600)
-        total_minutes, total_seconds = divmod(remainder, 60)
+        #total_hours, remainder = divmod(total_time_seconds, 3600)
+        #total_minutes, total_seconds = divmod(remainder, 60)
 
-        print(f"Total Generation Time: {int(total_hours)}h {int(total_minutes)}m {total_seconds:.2f}s")
+        #print(f"Total Generation Time: {int(total_hours)}h {int(total_minutes)}m {total_seconds:.2f}s")
 
-        # Combine generated image information with the original DataFrame
-        generated_df = pd.DataFrame(generated_image_info, columns=['original_id', 'fake_id'])
-        original_df = pd.read_csv(self.INPUT_CSV_PATH)
-        original_df = original_df[self.START_INDEX:self.END_INDEX]
+        #print("\nGeneration completed.")
 
-        # Merge the original DataFrame with the generated DataFrame
-        merged_df = pd.merge(original_df, generated_df, left_on='id', right_on="original_id", how='left')
-
-        # Add the 'class' column
-        merged_df['class'] = "fake"
-
-        # Save the merged DataFrame to a new CSV file
-        folder_name = os.path.basename(self.OUTPUT_FOLDER)
-        destination_dir = os.path.join(self.OUTPUT_FOLDER, f'{folder_name}_GL.csv')
-        merged_df.to_csv(destination_dir, index=False)
-
-        print("\nGeneration completed.")
 
 
 if __name__ == "__main__":
